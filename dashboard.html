@@ -3,132 +3,163 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>家庭高净值资产 | LP 监控台</title>
+    <title>家庭高净值资产 | 监控台</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <style>.neon-text { text-shadow: 0 0 10px rgba(52, 211, 153, 0.5); } body { background-color: #0f172a; color: #f8fafc; }</style>
 </head>
-<body class="p-4 md:p-8 font-mono">
+<body class="p-4 md:p-8 font-mono relative">
 
 <div id="app" class="max-w-4xl mx-auto space-y-6">
     <header class="border-b border-gray-700 pb-4 flex justify-between items-end">
         <div>
-            <h1 class="text-2xl font-bold text-gray-200 tracking-widest">底层资产净值监控 (LP端)</h1>
-            <p class="text-sm text-gray-400 mt-1">乙方仅享有净本金安全权及被动收益权 [cite: 4]</p>
+            <h1 class="text-2xl font-bold text-gray-200 tracking-widest">底层资产监控系统</h1>
+            <p class="text-sm text-gray-400 mt-1">当前状态: {{ isAuthenticated ? '全量功能已解锁' : '只读模式' }}</p>
+        </div>
+        <div>
+            <button v-if="!isAuthenticated" @click="showAuthModal = true" class="bg-gray-800 border border-gray-600 text-sm py-1 px-3 rounded text-gray-300 transition hover:bg-gray-700">
+                🔒 乙方身份验证
+            </button>
+            <div v-else class="flex items-center space-x-4">
+                <span class="text-emerald-400 text-sm font-bold border border-emerald-500 bg-emerald-900/30 px-3 py-1 rounded">✅ 乙方已授权</span>
+                <button @click="logout" class="text-sm text-gray-400 hover:text-white underline transition">退出身份</button>
+            </div>
         </div>
     </header>
 
-    <div v-if="limitStatus.can_claim_quarterly" class="bg-blue-900/40 border border-blue-500 p-5 rounded-lg flex flex-col md:flex-row justify-between items-center shadow-lg shadow-blue-900/20">
-        <div class="mb-4 md:mb-0">
-            <h3 class="text-blue-400 font-bold text-lg mb-1">🔔 季度流动性派发许可 (由你抉择)</h3>
-            <p class="text-sm text-blue-200 leading-relaxed">
-                GP 已下达本季度 30 元免审提取许可。这是一道选择题：<br>
-                👉 你可以选择 <span class="font-bold text-white">提取现钞</span>（资金将离开本系统，你将丧失这30元在未来的无限复利）。<br>
-                👉 或者选择 <span class="font-bold text-white">忽略此通知</span>（让资金留在池子里，继续为你打工赚钱）。
-            </p>
-        </div>
-        <button @click="claimQuarterly" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded shadow-lg transition whitespace-nowrap">
-            提取现钞 (落袋为安)
-        </button>
-    </div>
-
-    <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
-        <div class="flex justify-between text-sm mb-2">
-            <span class="text-gray-400">本月动态配额阈值 (已含通胀上浮): <span class="text-white">¥{{ limitStatus.monthly_limit }}</span></span>
-            <span :class="limitStatus.remaining < 20 ? 'text-red-400' : 'text-emerald-400'">剩余可提: ¥{{ limitStatus.remaining }}</span>
-        </div>
-        <div class="w-full bg-gray-900 rounded-full h-2.5">
-            <div class="bg-blue-600 h-2.5 rounded-full" :style="`width: ${Math.min((limitStatus.used_amount / limitStatus.monthly_limit) * 100, 100)}%`"></div>
+    <div v-if="showAuthModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+        <div class="bg-gray-900 p-6 rounded-lg border border-gray-700 w-80 shadow-2xl">
+            <h3 class="text-white font-bold mb-4 text-center">系统授权核查</h3>
+            <input v-model="pinInput" type="password" placeholder="PIN" class="w-full bg-black border border-gray-700 rounded p-3 text-white mb-4 text-center tracking-[0.5em] text-lg focus:border-emerald-500 focus:outline-none" @keyup.enter="verifyPin">
+            <div class="flex space-x-3">
+                <button @click="closeAuthModal" class="w-1/2 bg-gray-800 hover:bg-gray-700 text-white py-2 rounded transition">取消</button>
+                <button @click="verifyPin" class="w-1/2 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded font-bold transition">解锁</button>
+            </div>
         </div>
     </div>
 
-    <div class="bg-gray-800 p-8 rounded-lg border border-gray-700 shadow-lg mb-6 text-center relative overflow-hidden">
+    <div class="bg-gray-800 p-8 rounded-lg border border-gray-700 shadow-lg text-center relative overflow-hidden">
         <div class="absolute top-0 left-1/2 transform -translate-x-1/2 w-full h-1 bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.8)]"></div>
-        
         <h2 class="text-gray-400 text-sm mb-4">底层资产理论应得总值 (R_total)</h2>
-        <div class="text-5xl md:text-6xl font-bold text-emerald-400 neon-text tracking-wider">
-            ¥ {{ navData.R_total || '0.00' }}
-        </div>
-        
+        <div class="text-5xl md:text-6xl font-bold text-emerald-400 neon-text tracking-wider">¥ {{ navData.R_total || '0.00' }}</div>
         <div class="mt-8 flex justify-center space-x-8 text-sm border-t border-gray-700 pt-4 max-w-md mx-auto">
             <span class="text-gray-400">有效本金: <span class="text-white font-mono">¥{{ navData.effective_principal }}</span></span>
             <span class="text-gray-400">已生复利: <span class="text-emerald-400 font-mono">+¥{{ navData.total_compound_interest }}</span></span>
         </div>
     </div>
 
-    <div class="bg-gray-800 p-6 rounded-lg border border-gray-700 shadow-lg">
-        <h3 class="text-gray-400 text-sm mb-4 flex items-center font-bold">
-            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"></path></svg>
-            底层资产穿透报告 (资金真实去向)
-        </h3>
+    <div class="bg-gray-800 p-6 rounded-lg border-l-4 border-yellow-500 border-t border-b border-r border-gray-700 shadow-lg">
+        <div class="flex items-center mb-4">
+            <h3 class="text-yellow-500 text-sm font-bold tracking-widest uppercase">底层资产穿透报告 (资金真实去向)</h3>
+            <span class="ml-2 text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded">PUBLIC VIEW</span>
+        </div>
         
-        <div v-if="!allocations || allocations.length === 0" class="text-sm text-gray-500 py-2">
-            目前资金处于备付金状态，GP 暂未进行跨资产宏观配置。
+        <div v-if="!allocations || allocations.length === 0" class="text-sm text-gray-500 py-3 border border-dashed border-gray-700 rounded text-center">
+            目前资金处于纯粹的系统备付金状态，GP 暂未进行任何跨资产宏观配置。
         </div>
         
         <div v-else class="space-y-3">
-            <div v-for="item in allocations" :key="item.asset" class="flex items-center justify-between text-sm bg-gray-900 p-3 rounded border border-gray-700">
-                <span class="text-gray-300 font-bold">{{ item.asset }}</span>
+            <div v-for="item in allocations" :key="item.asset" class="flex justify-between items-center bg-gray-900 p-4 rounded border border-gray-700 shadow-inner">
+                <span class="text-gray-200 font-bold text-lg">{{ item.asset }}</span>
                 <div class="text-right">
-                    <span class="text-yellow-500 font-mono">¥ {{ item.amount }}</span>
-                    <span class="text-xs text-gray-500 ml-2">
-                        ({{ navData.R_total > 0 ? ((item.amount / navData.R_total) * 100).toFixed(1) : 0 }}%)
+                    <span class="text-yellow-400 font-mono text-lg font-bold">¥ {{ item.amount }}</span>
+                    <span class="text-xs text-gray-500 ml-2 bg-black px-2 py-1 rounded">
+                        占总仓位: {{ navData.R_total > 0 ? ((item.amount / navData.R_total) * 100).toFixed(1) : 0 }}%
                     </span>
                 </div>
             </div>
         </div>
-        <p class="text-xs text-gray-500 mt-4 border-t border-gray-700 pt-2">
-            声明：此板块展示你被托管的资金在物理世界的真实运作轨迹（如：余额宝生息、美股对冲等）。
-        </p>
+        <p class="text-xs text-gray-600 mt-4 italic">注：此板块展示托管资金在物理世界（如余额宝、纳斯达克等）的真实映射。</p>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-        <div class="border border-gray-700 rounded-lg p-6 bg-gray-900">
-            <h3 class="text-lg text-red-400 font-bold mb-4">发起限制性赎回 (买东西)</h3>
-            <form @submit.prevent="submitWithdrawal" class="space-y-4">
-                <input v-model="form.amount" type="number" step="0.01" class="w-full bg-black border border-gray-700 rounded p-2 text-white" placeholder="申请金额" required>
-                <textarea v-model="form.reason" class="w-full bg-black border border-gray-700 rounded p-2 text-white" placeholder="资金用途自述..." required></textarea>
-                <button type="submit" class="bg-red-900/80 hover:bg-red-800 text-white font-bold py-2 px-4 rounded w-full border border-red-700 transition">提交 T-3 审查</button>
-            </form>
+    <div v-if="isAuthenticated" class="space-y-6 animate-fade-in-down">
+        
+        <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
+            <div class="flex justify-between text-sm mb-2">
+                <span class="text-gray-400">本月动态配额: ¥{{ limitStatus.monthly_limit }}</span>
+                <span :class="limitStatus.remaining < 20 ? 'text-red-400 font-bold' : 'text-emerald-400'">本月剩余可提: ¥{{ limitStatus.remaining }}</span>
+            </div>
+            <div class="w-full bg-gray-900 rounded-full h-3 border border-black shadow-inner">
+                <div class="bg-blue-600 h-full rounded-full transition-all duration-500" :style="`width: ${Math.min((limitStatus.used_amount / limitStatus.monthly_limit) * 100, 100)}%`"></div>
+            </div>
         </div>
 
-        <div class="border border-gray-700 rounded-lg p-6 bg-gray-900">
-            <h3 class="text-lg text-emerald-400 font-bold mb-4">正向阿尔法红利行权 (传成绩)</h3>
-            <form @submit.prevent="submitAlpha" class="space-y-4">
-                <input v-model="alphaForm.reason" type="text" class="w-full bg-black border border-gray-700 rounded p-2 text-white" placeholder="达标说明(如: 期末数学年级前3%)" required>
-                <input type="file" ref="fileInput" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-gray-700 file:text-white" required>
-                <button type="submit" class="bg-emerald-800/80 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded w-full border border-emerald-600 transition">上传凭证，等待 GP 裁定奖金</button>
-            </form>
+        <div v-if="quarterlyInfo.status === 'ACTIVE'" class="bg-blue-900/40 border border-blue-500 p-5 rounded-lg flex flex-col md:flex-row justify-between items-center shadow-[0_0_15px_rgba(59,130,246,0.2)] animate-pulse-slow">
+            <div class="mb-4 md:mb-0">
+                <h3 class="text-blue-400 font-bold text-lg mb-1">🔔 限时！季度流动性派发许可</h3>
+                <p class="text-sm text-blue-200">GP 已下发 30 元免审提取许可。逾期不领自动作废入池！</p>
+                <p class="text-sm text-yellow-400 mt-2 font-bold tracking-widest font-mono">⏳ 剩余决定时间: {{ quarterlyInfo.hours_left }} 小时</p>
+            </div>
+            <button @click="claimQuarterly" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded shadow-lg whitespace-nowrap transition">立刻落袋为安</button>
         </div>
-    </div>
 
-    <div class="mt-8 border border-gray-700 rounded-lg p-6 bg-gray-900 shadow-inner">
-        <h3 class="text-lg text-blue-400 font-bold mb-4 flex items-center">工单进度追踪 (最近10条)</h3>
-        <div v-if="myRequests.length === 0" class="text-gray-500 text-sm py-4">暂无历史申请记录。</div>
-        <div v-else class="space-y-3 overflow-y-auto pr-2">
-            <div v-for="req in myRequests" :key="req.id" class="flex justify-between items-center bg-black p-3 rounded border border-gray-800">
-                <div>
-                    <span class="text-xs text-gray-500">{{ req.req_date }}</span>
-                    <span class="ml-2 text-sm font-bold" :class="req.req_type === 'WITHDRAWAL_REQ' ? 'text-red-400' : 'text-emerald-400'">
-                        {{ req.req_type === 'WITHDRAWAL_REQ' ? '流动性释放 (提款)' : '阿尔法红利 (奖金)' }}
-                    </span>
-                    <div class="text-xs text-gray-400 mt-1">事由: {{ req.reason }}</div>
-                </div>
-                <div class="text-right">
-                    <div class="text-lg font-mono text-white">¥ {{ req.amount > 0 ? req.amount : '等待核定' }}</div>
-                    <div class="text-xs font-bold mt-1 px-2 py-1 rounded inline-block"
-                         :class="{
-                            'bg-yellow-900/50 text-yellow-500 border border-yellow-700': req.status === 'PENDING',
-                            'bg-emerald-900/50 text-emerald-500 border border-emerald-700': req.status === 'APPROVED',
-                            'bg-red-900/50 text-red-500 border border-red-700': req.status === 'REJECTED'
-                         }">
-                        {{ req.status === 'PENDING' ? '⏳ 审查中' : (req.status === 'APPROVED' ? '✅ 已批准' : '❌ 已驳回') }}
+        <div v-if="quarterlyInfo.status === 'EXPIRED' && quarterlyInfo.show_expired" class="bg-gray-900 border border-red-900/50 p-5 rounded-lg flex items-start shadow-inner">
+            <span class="text-3xl mr-4 opacity-70">📉</span>
+            <div>
+                <h3 class="text-red-400 font-bold mb-1">一份派息令已超时作废</h3>
+                <p class="text-sm text-gray-500 leading-relaxed">
+                    你有一笔发布于 <span class="font-bold text-gray-300">{{ quarterlyInfo.issued_at }}</span> 的 30 元派息，因超过 72 小时未行权，现已自动取消并充入本金池。<br>
+                    <span class="text-xs text-gray-600 mt-2 block italic">(此提示将在过期72小时后自动销毁)</span>
+                </p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="border border-gray-700 rounded-lg p-6 bg-gray-900 shadow-lg">
+                <h3 class="text-lg text-red-400 font-bold mb-4">限制性赎回 (买东西)</h3>
+                <form @submit.prevent="submitWithdrawal" class="space-y-4">
+                    <input v-model="form.amount" type="number" step="0.01" class="w-full bg-black border border-gray-700 rounded p-2 text-white focus:border-red-500 focus:outline-none" placeholder="提款金额" required>
+                    <textarea v-model="form.reason" class="w-full bg-black border border-gray-700 rounded p-2 text-white focus:border-red-500 focus:outline-none" placeholder="资金用途自述..." required></textarea>
+                    <button type="submit" class="bg-red-900/80 hover:bg-red-700 text-white font-bold py-2 rounded w-full border border-red-700 transition tracking-widest">提交审查</button>
+                </form>
+            </div>
+            <div class="border border-gray-700 rounded-lg p-6 bg-gray-900 shadow-lg">
+                <h3 class="text-lg text-emerald-400 font-bold mb-4">阿尔法红利行权 (传成绩)</h3>
+                <form @submit.prevent="submitAlpha" class="space-y-4">
+                    <input v-model="alphaForm.reason" type="text" class="w-full bg-black border border-gray-700 rounded p-2 text-white focus:border-emerald-500 focus:outline-none" placeholder="达标说明 (如：期末全班第一)" required>
+                    <input type="file" ref="fileInput" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-gray-700 file:text-white hover:file:bg-gray-600" required>
+                    <button type="submit" class="bg-emerald-800/80 hover:bg-emerald-700 text-white font-bold py-2 rounded w-full border border-emerald-600 transition tracking-widest">上传凭证</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="border border-gray-700 rounded-lg p-6 bg-gray-900 shadow-inner">
+            <h3 class="text-lg text-blue-400 font-bold mb-4 flex items-center">📝 工单追踪轴 (最近10条)</h3>
+            <div class="space-y-3 overflow-y-auto max-h-64 pr-2">
+                <div v-if="myRequests.length === 0" class="text-center text-gray-500 text-sm py-4">系统记录极其干净，暂无申请。</div>
+                <div v-for="req in myRequests" :key="req.id" class="flex justify-between items-center bg-black p-4 rounded border border-gray-800">
+                    <div>
+                        <span class="text-xs text-gray-500">{{ req.req_date }}</span>
+                        <span class="ml-2 text-sm font-bold" :class="req.req_type === 'WITHDRAWAL_REQ' ? 'text-red-400' : 'text-emerald-400'">{{ req.req_type === 'WITHDRAWAL_REQ' ? '提款' : '奖金' }}</span>
+                        <div class="text-xs text-gray-400 mt-1">事由: {{ req.reason }}</div>
                     </div>
+                    <div class="text-right">
+                        <div class="text-lg font-mono text-white">¥ {{ req.amount > 0 ? req.amount : '等待核定' }}</div>
+                        <div class="text-xs font-bold mt-1 px-2 py-1 rounded inline-block" :class="{'bg-yellow-900/50 text-yellow-500 border border-yellow-700': req.status === 'PENDING', 'bg-emerald-900/50 text-emerald-500 border border-emerald-700': req.status === 'APPROVED', 'bg-red-900/50 text-red-500 border border-red-700': req.status === 'REJECTED'}">
+                            {{ req.status === 'PENDING' ? '⏳ 审查中' : (req.status === 'APPROVED' ? '✅ 已批准' : '❌ 已驳回') }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="border border-gray-700 rounded-lg p-6 bg-gray-900 shadow-inner">
+            <h3 class="text-lg text-yellow-500 font-bold mb-4 flex items-center">💬 家庭办公室双向留言</h3>
+            <form @submit.prevent="submitMessage" class="mb-6 flex space-x-2">
+                <input v-model="msgInput" type="text" placeholder="对 GP 说点什么... (抱怨、期望或提问)" class="flex-1 bg-black border border-gray-700 rounded p-2 text-white text-sm focus:border-yellow-500 focus:outline-none" required>
+                <button type="submit" class="bg-yellow-700 hover:bg-yellow-600 text-white px-6 py-2 rounded text-sm font-bold transition">发送</button>
+            </form>
+            <div class="space-y-4 max-h-64 overflow-y-auto pr-2">
+                <div v-for="msg in messages" :key="msg.id" class="bg-black p-4 rounded border border-gray-800 text-sm">
+                    <div class="text-gray-300"><span class="text-blue-400 font-bold">乙方发出:</span> {{ msg.content }} <span class="text-xs text-gray-600 ml-2">{{ msg.created_date }}</span></div>
+                    <div v-if="msg.reply" class="mt-3 pl-4 border-l-2 border-yellow-600 text-gray-400 bg-gray-900/50 py-2"><span class="text-yellow-500 font-bold">GP 批示回复:</span> {{ msg.reply }}</div>
                 </div>
             </div>
         </div>
     </div>
 </div>
+
+<style>.animate-pulse-slow { animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite; } @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .8; } } .animate-fade-in-down { animation: fadeInDown 0.5s ease-out; } @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }</style>
 
 <script>
     const { createApp, ref, onMounted } = Vue
@@ -136,67 +167,103 @@
         setup() {
             const API_BASE = '/api/v1';
             const navData = ref({});
-            const limitStatus = ref({ monthly_limit: 0, used_amount: 0, remaining: 0, can_claim_quarterly: false });
+            const limitStatus = ref({});
+            const allocations = ref([]);
+            const quarterlyInfo = ref({});
+            
+            const isAuthenticated = ref(localStorage.getItem('lp_auth') === 'true');
+            const showAuthModal = ref(false);
+            const pinInput = ref('');
+
             const form = ref({ amount: '', reason: '' });
             const alphaForm = ref({ reason: '' });
-            const myRequests = ref([]);
             const fileInput = ref(null);
+            const msgInput = ref('');
             
-            // 【新增】用来接收后台穿透数据的变量
-            const allocations = ref([]);
+            const messages = ref([]);
+            const myRequests = ref([]);
 
-            const fetchData = async () => {
-                // 刷新净值与资产去向
-                const navRes = await fetch(`${API_BASE}/dashboard`);
-                const dashboardData = await navRes.json();
-                navData.value = dashboardData.nav;
-                allocations.value = dashboardData.allocations || []; // 拿到底层的资产配置数据
+            const fetchPublicData = async () => {
+                const dashData = await (await fetch(`${API_BASE}/dashboard`)).json();
+                navData.value = dashData.nav;
+                allocations.value = dashData.allocations;
+                quarterlyInfo.value = dashData.quarterly_info;
+            };
 
-                // 刷新额度
-                const limitRes = await fetch(`${API_BASE}/lp/limit_status`);
-                limitStatus.value = await limitRes.json();
+            const fetchPrivateData = async () => {
+                if(!isAuthenticated.value) return;
+                limitStatus.value = await (await fetch(`${API_BASE}/lp/limit_status`)).json();
+                messages.value = await (await fetch(`${API_BASE}/messages`)).json();
+                myRequests.value = await (await fetch(`${API_BASE}/lp/my_requests`)).json();
+            };
+
+            const verifyPin = async () => {
+                try {
+                    const res = await fetch(`${API_BASE}/lp/verify`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({pin: pinInput.value})});
+                    if (res.ok) { 
+                        isAuthenticated.value = true; 
+                        localStorage.setItem('lp_auth', 'true'); 
+                        showAuthModal.value = false; 
+                        
+                        // 👉 修复：成功解锁的同时，立刻把变量里的密码擦掉
+                        pinInput.value = ''; 
+                        
+                        fetchPrivateData(); 
+                    }
+                    else alert("授权密码错误！请检查后重试。");
+                } catch(e) { alert("网络连接失败，请确认后台服务器已启动！"); }
+            };
+
+            // 👉 新增：点取消也顺手清空密码
+            const closeAuthModal = () => {
+                showAuthModal.value = false;
+                pinInput.value = ''; 
+            };
+
+            const logout = () => {
+                isAuthenticated.value = false; localStorage.removeItem('lp_auth');
+                limitStatus.value = {}; messages.value = []; myRequests.value = [];
                 
-                // 刷新工单列表
-                const reqRes = await fetch(`${API_BASE}/lp/my_requests`);
-                myRequests.value = await reqRes.json();
+                // 👉 修复：退出登录时，再次彻底抹除密码缓存！
+                pinInput.value = ''; 
+            };
+
+            const submitMessage = async () => {
+                const fd = new FormData(); fd.append('content', msgInput.value);
+                await fetch(`${API_BASE}/lp/messages`, { method: 'POST', body: fd }); 
+                alert("留言已发送到 GP 桌面上！"); msgInput.value = ''; fetchPrivateData();
             };
 
             const submitWithdrawal = async () => {
-                if (!confirm("警告：任何提前提取都会直接扣减你的有效本金，导致复利断崖式下跌。你确定要放弃延迟满足吗？")) return;
-                
-                const formData = new FormData();
-                formData.append('amount', form.value.amount);
-                formData.append('reason', form.value.reason);
-                try {
-                    const res = await fetch(`${API_BASE}/lp/request_withdrawal`, { method: 'POST', body: formData });
-                    const result = await res.json();
-                    if (!res.ok) alert(result.detail); else { alert(result.message); form.value = {amount:'', reason:''}; fetchData(); }
-                } catch (e) { alert("网络错误"); }
+                if (!confirm("警告：任何提前提取都会直接扣减您的有效本金，导致未来的复利断崖式下跌。您确定要为了短期消费而放弃延迟满足吗？")) return;
+                const fd = new FormData(); fd.append('amount', form.value.amount); fd.append('reason', form.value.reason);
+                const res = await fetch(`${API_BASE}/lp/request_withdrawal`, { method: 'POST', body: fd });
+                if (!res.ok) alert((await res.json()).detail); else { alert("提款申请工单已生成，请耐心等待审计部门 (GP) 批准。"); form.value = {amount:'', reason:''}; fetchPrivateData(); fetchPublicData(); }
             };
 
             const submitAlpha = async () => {
-                const formData = new FormData();
-                formData.append('reason', alphaForm.value.reason);
-                formData.append('file', fileInput.value.files[0]);
-                try {
-                    const res = await fetch(`${API_BASE}/lp/request_alpha`, { method: 'POST', body: formData });
-                    alert((await res.json()).message);
-                    alphaForm.value = {reason:''};
-                    fileInput.value.value = null;
-                    fetchData();
-                } catch (e) { alert("上传失败，请检查文件"); }
+                const fd = new FormData(); fd.append('reason', alphaForm.value.reason); fd.append('file', fileInput.value.files[0]);
+                const res = await fetch(`${API_BASE}/lp/request_alpha`, { method: 'POST', body: fd }); 
+                if(res.ok) { alert("凭证附件已成功上传！请等待 GP 核定最终的奖金金额。"); alphaForm.value = {reason:''}; fetchPrivateData(); }
             };
 
             const claimQuarterly = async () => {
-                if (!confirm("真的要落袋为安吗？如果把这30元留在池子里，它会陪着你的本金一起复利增长哦！")) return;
-                
-                const res = await fetch(`${API_BASE}/lp/claim_quarterly`, { method: 'POST' });
-                alert((await res.json()).message);
-                fetchData();
+                if (!confirm("这 30 元如果留在池子里，它会陪着你的本金一起复利增长。一旦提取，它将永远离开这个系统。您真的要选择『落袋为安』吗？")) return;
+                try {
+                    const res = await fetch(`${API_BASE}/lp/claim_quarterly`, { method: 'POST' });
+                    if (!res.ok) alert((await res.json()).detail); else alert("提取成功！这笔 30 元现钞现已归你自由支配！");
+                    fetchPrivateData(); fetchPublicData();
+                } catch(e) { alert("网络错误"); }
             };
 
-            onMounted(fetchData);
-            return { navData, limitStatus, form, alphaForm, fileInput, myRequests, allocations, submitWithdrawal, submitAlpha, claimQuarterly }
+            onMounted(() => { fetchPublicData(); fetchPrivateData(); });
+            
+            return { 
+                navData, allocations, limitStatus, quarterlyInfo,
+                isAuthenticated, showAuthModal, pinInput, verifyPin, closeAuthModal, logout,
+                form, alphaForm, fileInput, msgInput, messages, myRequests,
+                submitWithdrawal, submitAlpha, claimQuarterly, submitMessage 
+            }
         }
     }).mount('#app')
 </script>
