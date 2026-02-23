@@ -240,11 +240,24 @@ def claim_quarterly(db: Session = Depends(get_db)):
     return {"status": "success", "message": "30元现钞已落袋为安！"}
 
 @app.post("/api/v1/lp/request_alpha")
-def lp_request_alpha(reason: str = Form(...), file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def lp_request_alpha(reason: str = Form(...), file: UploadFile = File(...), db: Session = Depends(get_db)):
+    # 👉 核心升级：读取文件内容并校验大小
+    file_content = await file.read()
+    
+    # 后端硬性规定：大于 5MB (5 * 1024 * 1024 字节) 直接打回！
+    if len(file_content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="拦截！后端检测到图片体积超过 5MB 的物理限制。")
+        
+    # 如果没超标，再安安稳稳地存入硬盘
     loc = f"{UPLOAD_DIR}/{file.filename}"
-    with open(loc, "wb+") as f: shutil.copyfileobj(file.file, f)
-    db.add(DBRequest(req_type="ALPHA_REQ", amount=0.0, reason=reason, proof_image=loc)); db.commit()
-    notify_gp_wechat("📈 阿尔法红利申请", f"弟弟提交了一份奖金凭证\n达标说明：{reason}\n请尽快登录后台查阅凭证图片并核定金额。") # 👉 新加的这行
+    with open(loc, "wb") as f: 
+        f.write(file_content)
+        
+    db.add(DBRequest(req_type="ALPHA_REQ", amount=0.0, reason=reason, proof_image=loc))
+    db.commit()
+    
+    # 顺便把咱们的微信通知也带上
+    notify_gp_wechat("📈 阿尔法红利申请", f"弟弟提交了一份奖金凭证\n达标说明：{reason}\n请尽快登录后台查阅图片并核定金额。")
     return {"status": "success", "message": "阿尔法凭证已上传成功！"}
 
 @app.get("/api/v1/lp/my_requests")
