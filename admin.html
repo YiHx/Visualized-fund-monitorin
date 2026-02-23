@@ -29,7 +29,7 @@
                         <div>
                             <p class="text-lg text-white">金额: ¥ {{ req.amount > 0 ? req.amount.toFixed(2) : '等待 GP 核定' }}</p>
                             <p class="text-sm text-gray-400">事由: {{ req.reason }}</p>
-                            <a v-if="req.proof_image" :href="'http://127.0.0.1:8000/' + req.proof_image" target="_blank" class="text-blue-400 text-sm underline mt-2 inline-block">👉 审查凭证</a>
+                            <a v-if="req.proof_image" :href="'/' + req.proof_image" target="_blank" class="text-blue-400 text-sm underline mt-2 inline-block">👉 审查凭证</a>
                         </div>
                         <div class="flex flex-col space-y-2 w-32">
                             <input v-if="req.req_type === 'ALPHA_REQ'" v-model="req.final_amount" type="number" class="w-full bg-black border border-yellow-700 rounded p-1 text-white text-sm text-center" placeholder="填核定金额">
