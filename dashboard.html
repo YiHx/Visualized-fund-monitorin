@@ -63,17 +63,25 @@
                 <span class="text-gray-200 font-bold text-lg">{{ item.asset }}</span>
                 <div class="text-right">
                     <span class="text-yellow-400 font-mono text-lg font-bold">¥ {{ item.amount }}</span>
-                    <span class="text-xs text-gray-500 ml-2 bg-black px-2 py-1 rounded">
-                        占总仓位: {{ navData.R_total > 0 ? ((item.amount / navData.R_total) * 100).toFixed(1) : 0 }}%
-                    </span>
+                    <span class="text-xs text-gray-500 ml-2 bg-black px-2 py-1 rounded">占总仓位: {{ navData.R_total > 0 ? ((item.amount / navData.R_total) * 100).toFixed(1) : 0 }}%</span>
                 </div>
             </div>
         </div>
-        <p class="text-xs text-gray-600 mt-4 italic">注：此板块展示托管资金在物理世界（如余额宝、纳斯达克等）的真实映射。</p>
     </div>
 
     <div v-if="isAuthenticated" class="space-y-6 animate-fade-in-down">
         
+        <div v-if="notices.length > 0" class="bg-orange-900/40 border border-orange-500 p-5 rounded-lg shadow-lg relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-1 h-full bg-orange-500"></div>
+            <h3 class="text-orange-400 font-bold text-lg mb-3 flex items-center">📢 GP 系统公文 / 通知</h3>
+            <div class="space-y-3 max-h-48 overflow-y-auto pr-2">
+                <div v-for="notice in notices" :key="notice.id" class="bg-black/60 p-4 rounded border border-orange-700/50 shadow-inner">
+                    <p class="text-gray-200 text-sm leading-relaxed whitespace-pre-wrap">{{ notice.content }}</p>
+                    <p class="text-orange-500/70 text-xs mt-3 text-right">发布时间: {{ notice.publish_time }}</p>
+                </div>
+            </div>
+        </div>
+
         <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
             <div class="flex justify-between text-sm mb-2">
                 <span class="text-gray-400">本月动态配额: ¥{{ limitStatus.monthly_limit }}</span>
@@ -127,14 +135,16 @@
             <h3 class="text-lg text-blue-400 font-bold mb-4 flex items-center">📝 工单追踪轴 (最近10条)</h3>
             <div class="space-y-3 overflow-y-auto max-h-64 pr-2">
                 <div v-if="myRequests.length === 0" class="text-center text-gray-500 text-sm py-4">系统记录极其干净，暂无申请。</div>
-                <div v-for="req in myRequests" :key="req.id" class="flex justify-between items-center bg-black p-4 rounded border border-gray-800">
-                    <div>
+                <div v-for="req in myRequests" :key="req.id" class="flex justify-between items-center bg-black p-4 rounded border border-gray-800" :class="{'border-red-900 bg-red-900/10': req.status === 'REJECTED'}">
+                    <div class="flex-1 mr-4">
                         <span class="text-xs text-gray-500">{{ req.req_date }}</span>
                         <span class="ml-2 text-sm font-bold" :class="req.req_type === 'WITHDRAWAL_REQ' ? 'text-red-400' : 'text-emerald-400'">{{ req.req_type === 'WITHDRAWAL_REQ' ? '提款' : '奖金' }}</span>
-                        <div class="text-xs text-gray-400 mt-1">事由: {{ req.reason }}</div>
+                        <div class="text-xs text-gray-300 mt-2 font-mono leading-relaxed">{{ req.reason }}</div>
                     </div>
-                    <div class="text-right">
-                        <div class="text-lg font-mono text-white">¥ {{ req.amount > 0 ? req.amount : '等待核定' }}</div>
+                    <div class="text-right w-24">
+                        <div class="text-lg font-mono text-white" :class="{'text-gray-500 line-through': req.status === 'REJECTED'}">
+                            ¥ {{ req.status === 'REJECTED' ? '0.00' : (req.amount > 0 ? req.amount : '等待核定') }}
+                        </div>
                         <div class="text-xs font-bold mt-1 px-2 py-1 rounded inline-block" :class="{'bg-yellow-900/50 text-yellow-500 border border-yellow-700': req.status === 'PENDING', 'bg-emerald-900/50 text-emerald-500 border border-emerald-700': req.status === 'APPROVED', 'bg-red-900/50 text-red-500 border border-red-700': req.status === 'REJECTED'}">
                             {{ req.status === 'PENDING' ? '⏳ 审查中' : (req.status === 'APPROVED' ? '✅ 已批准' : '❌ 已驳回') }}
                         </div>
@@ -182,6 +192,7 @@
             
             const messages = ref([]);
             const myRequests = ref([]);
+            const notices = ref([]); // 👉 新增：装载通知的变量
 
             const fetchPublicData = async () => {
                 const dashData = await (await fetch(`${API_BASE}/dashboard`)).json();
@@ -195,6 +206,7 @@
                 limitStatus.value = await (await fetch(`${API_BASE}/lp/limit_status`)).json();
                 messages.value = await (await fetch(`${API_BASE}/messages`)).json();
                 myRequests.value = await (await fetch(`${API_BASE}/lp/my_requests`)).json();
+                notices.value = await (await fetch(`${API_BASE}/lp/notices`)).json(); // 👉 拉取全网通知
             };
 
             const verifyPin = async () => {
@@ -204,27 +216,18 @@
                         isAuthenticated.value = true; 
                         localStorage.setItem('lp_auth', 'true'); 
                         showAuthModal.value = false; 
-                        
-                        // 👉 修复：成功解锁的同时，立刻把变量里的密码擦掉
                         pinInput.value = ''; 
-                        
                         fetchPrivateData(); 
                     }
                     else alert("授权密码错误！请检查后重试。");
                 } catch(e) { alert("网络连接失败，请确认后台服务器已启动！"); }
             };
 
-            // 👉 新增：点取消也顺手清空密码
-            const closeAuthModal = () => {
-                showAuthModal.value = false;
-                pinInput.value = ''; 
-            };
+            const closeAuthModal = () => { showAuthModal.value = false; pinInput.value = ''; };
 
             const logout = () => {
                 isAuthenticated.value = false; localStorage.removeItem('lp_auth');
-                limitStatus.value = {}; messages.value = []; myRequests.value = [];
-                
-                // 👉 修复：退出登录时，再次彻底抹除密码缓存！
+                limitStatus.value = {}; messages.value = []; myRequests.value = []; notices.value = [];
                 pinInput.value = ''; 
             };
 
@@ -235,10 +238,10 @@
             };
 
             const submitWithdrawal = async () => {
-                if (!confirm("警告：任何提前提取都会直接扣减您的有效本金，导致未来的复利断崖式下跌。您确定要为了短期消费而放弃延迟满足吗？")) return;
+                if (!confirm("警告：任何提前提取都会直接扣减您的有效本金。确定提交吗？")) return;
                 const fd = new FormData(); fd.append('amount', form.value.amount); fd.append('reason', form.value.reason);
                 const res = await fetch(`${API_BASE}/lp/request_withdrawal`, { method: 'POST', body: fd });
-                if (!res.ok) alert((await res.json()).detail); else { alert("提款申请工单已生成，请耐心等待审计部门 (GP) 批准。"); form.value = {amount:'', reason:''}; fetchPrivateData(); fetchPublicData(); }
+                if (!res.ok) alert((await res.json()).detail); else { alert("提款申请工单已生成，等待审计批准。"); form.value = {amount:'', reason:''}; fetchPrivateData(); fetchPublicData(); }
             };
 
             const submitAlpha = async () => {
@@ -248,7 +251,7 @@
             };
 
             const claimQuarterly = async () => {
-                if (!confirm("这 30 元如果留在池子里，它会陪着你的本金一起复利增长。一旦提取，它将永远离开这个系统。您真的要选择『落袋为安』吗？")) return;
+                if (!confirm("确定要『落袋为安』提取这30元吗？")) return;
                 try {
                     const res = await fetch(`${API_BASE}/lp/claim_quarterly`, { method: 'POST' });
                     if (!res.ok) alert((await res.json()).detail); else alert("提取成功！这笔 30 元现钞现已归你自由支配！");
@@ -259,7 +262,7 @@
             onMounted(() => { fetchPublicData(); fetchPrivateData(); });
             
             return { 
-                navData, allocations, limitStatus, quarterlyInfo,
+                navData, allocations, limitStatus, quarterlyInfo, notices,
                 isAuthenticated, showAuthModal, pinInput, verifyPin, closeAuthModal, logout,
                 form, alphaForm, fileInput, msgInput, messages, myRequests,
                 submitWithdrawal, submitAlpha, claimQuarterly, submitMessage 

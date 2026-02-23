@@ -64,6 +64,14 @@ class DBQuarterlyEvent(Base):
     status = Column(String, default="ACTIVE")          
     claimed_at = Column(DateTime, nullable=True)       
 
+# 👉 新增：前台通知广播表
+class DBNotice(Base):
+    __tablename__ = "notices"
+    id = Column(Integer, primary_key=True, index=True)
+    publish_time = Column(DateTime, default=datetime.now)
+    content = Column(String, nullable=False)
+
+# 这里会自动建出新表，不会破坏老数据
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="家庭高净值资产控制台")
@@ -90,7 +98,7 @@ def get_db():
     finally: db.close()
 
 # ==========================================
-# 2. 核心算法与时间引擎 (支持上帝视角调账)
+# 2. 核心算法与时间引擎
 # ==========================================
 def get_dynamic_monthly_limit():
     BASE_LIMIT = 100.0
@@ -112,11 +120,8 @@ def calculate_system_nav(db: Session, current_date: date):
     HURDLE_RATE = 0.015 
     txs = db.query(DBTransaction).order_by(DBTransaction.tx_date.asc()).all()
     total_principal, total_alpha, total_interest = 0.0, 0.0, 0.0
-    
-    # 👉 核心修改：把上帝强控扣款（ADJUST_DOWN）算作流出，上帝注资（ADJUST_UP）算作流入
     withdrawals = [t.amount for t in txs if t.tx_type in ['WITHDRAWAL', 'QUARTERLY_PAYOUT', 'ADJUST_DOWN']]
     inflows = [t for t in txs if t.tx_type in ['PRINCIPAL', 'ALPHA', 'ADJUST_UP']]
-    
     for inflow in inflows:
         days_held = (current_date - inflow.tx_date).days
         if days_held < 0: continue
@@ -127,9 +132,8 @@ def calculate_system_nav(db: Session, current_date: date):
             else: withdrawals[0] -= effective_amount; effective_amount = 0 
         interest = effective_amount * ((1 + HURDLE_RATE) ** (days_held / 365.0) - 1)
         total_interest += interest
-        if inflow.tx_type in ['PRINCIPAL', 'ADJUST_UP']: total_principal += effective_amount # 强控增加算本金
+        if inflow.tx_type in ['PRINCIPAL', 'ADJUST_UP']: total_principal += effective_amount
         else: total_alpha += effective_amount
-        
     r_total = total_principal + total_alpha + total_interest
     return { "R_total": round(r_total, 4), "effective_principal": round(total_principal, 2), "total_compound_interest": round(total_interest, 4) }
 
@@ -166,6 +170,19 @@ def get_dashboard(db: Session = Depends(get_db)):
         "allocations": [{"asset": a.asset_name, "amount": a.allocated_amount} for a in db.query(DBAssetAllocation).all()],
         "quarterly_info": get_quarterly_info(db)
     }
+
+# 👉 新增：获取最新通知供前台展示
+@app.get("/api/v1/lp/notices")
+def lp_get_notices(db: Session = Depends(get_db)):
+    notices = db.query(DBNotice).order_by(desc(DBNotice.id)).limit(5).all()
+    return [{"id": n.id, "content": n.content, "publish_time": n.publish_time.strftime("%Y-%m-%d %H:%M")} for n in notices]
+
+# 👉 新增：GP发布通知接口
+@app.post("/api/v1/gp/notices")
+def gp_post_notice(content: str = Form(...), db: Session = Depends(get_db)):
+    db.add(DBNotice(content=content))
+    db.commit()
+    return {"status": "success", "message": "全网通知已强势发布！"}
 
 @app.get("/api/v1/messages")
 def get_messages(db: Session = Depends(get_db)): return db.query(DBMessage).order_by(desc(DBMessage.id)).limit(10).all()
@@ -222,12 +239,10 @@ def gp_inject_funds(amount: float = Form(...), tx_type: str = Form(...), descrip
     db.add(DBTransaction(tx_type=tx_type, amount=amount, description=description)); db.commit()
     return {"status": "success", "message": f"资金注入成功！已将 ¥{amount} 并入 {tx_type} 引擎。"}
 
-# 👉 新增：上帝模式强控 API
 @app.post("/api/v1/gp/adjust_funds")
 def gp_adjust_funds(action: str = Form(...), amount: float = Form(...), description: str = Form(...), db: Session = Depends(get_db)):
     if amount <= 0: raise HTTPException(status_code=400, detail="调整金额必须大于0")
     tx_type = "ADJUST_UP" if action == "UP" else "ADJUST_DOWN"
-    # 后台强控的理由前面加上明显标签，方便你在流水里一眼看见
     db.add(DBTransaction(tx_type=tx_type, amount=amount, description=f"【上帝模式强控】{description}"))
     db.commit()
     verb = "强行注入" if action == "UP" else "强行扣除"
@@ -243,15 +258,24 @@ def toggle_quarterly(db: Session = Depends(get_db)):
 @app.get("/api/v1/gp/pending_requests")
 def gp_get_pending_requests(db: Session = Depends(get_db)): return db.query(DBRequest).filter(DBRequest.status == "PENDING").all()
 
+# 👉 核心修改：处理驳回原因，并将废单金额清零
 @app.post("/api/v1/gp/process_request/{req_id}")
-def gp_process_request(req_id: int, action: str, final_amount: float = 0.0, db: Session = Depends(get_db)):
+def gp_process_request(req_id: int, action: str, final_amount: float = 0.0, reject_reason: str = "", db: Session = Depends(get_db)):
     req = db.query(DBRequest).filter(DBRequest.id == req_id).first()
-    if action == "REJECT": req.status = "REJECTED"
+    
+    if action == "REJECT": 
+        req.status = "REJECTED"
+        req.amount = 0.0 # 强制金额归零
+        if reject_reason:
+            # 把驳回原因直接盖章在原申请单的理由里，让乙方一眼就能看见
+            req.reason = req.reason + f" 【GP驳回: {reject_reason}】"
+            
     if action == "APPROVE":
         req.status = "APPROVED"
         actual = final_amount if req.req_type == "ALPHA_REQ" else req.amount
         if req.req_type == "ALPHA_REQ": req.amount = final_amount
         db.add(DBTransaction(tx_type="WITHDRAWAL" if req.req_type == "WITHDRAWAL_REQ" else "ALPHA", amount=actual, description=f"审计批准: {req.reason}"))
+        
     db.commit()
     return {"status": "success", "message": f"工单审批完成！已执行 {action} 指令。"}
 
