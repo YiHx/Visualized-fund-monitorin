@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta
 import os
 import shutil
 import secrets
+import requests
 
 # ==========================================
 # 0. 环境准备
@@ -98,6 +99,19 @@ def get_db():
 # ==========================================
 # 2. 核心算法与引擎
 # ==========================================
+def notify_gp_wechat(title, content):
+    url = "http://www.pushplus.plus/send"
+    data = {
+        "token": "e92ace8deade436093a43798c81ecddc",
+        "title": title,
+        "content": content
+    }
+    try:
+        # 给微信发信号，超时时间设为 2 秒，防止卡顿
+        requests.post(url, json=data, timeout=2)
+    except Exception as e:
+        print(f"微信通知发送失败: {e}")
+
 def get_dynamic_monthly_limit():
     BASE_LIMIT = 100.0
     today = date.today()
@@ -195,6 +209,7 @@ def get_messages(db: Session = Depends(get_db)): return db.query(DBMessage).orde
 @app.post("/api/v1/lp/messages")
 def post_message(content: str = Form(...), db: Session = Depends(get_db)):
     db.add(DBMessage(content=content)); db.commit()
+    notify_gp_wechat("💬 家庭办公室新留言", f"乙方有话对你说：\n{content}") # 👉 新加的这行
     return {"status": "success"}
 
 @app.get("/api/v1/lp/limit_status")
@@ -208,6 +223,7 @@ def lp_request_withdrawal(amount: float = Form(...), reason: str = Form(...), db
     limit = get_dynamic_monthly_limit()
     if get_current_month_used(db) + amount > limit: raise HTTPException(status_code=403, detail="触发熔断！超限。")
     db.add(DBRequest(req_type="WITHDRAWAL_REQ", amount=amount, reason=reason)); db.commit()
+    notify_gp_wechat("🚨 资金提款申请", f"弟弟申请提取 ¥{amount}\n理由：{reason}") # 👉 新加的这行
     return {"status": "success", "message": "工单提交成功，等待 GP 审核。"}
 
 @app.post("/api/v1/lp/claim_quarterly")
@@ -228,6 +244,7 @@ def lp_request_alpha(reason: str = Form(...), file: UploadFile = File(...), db: 
     loc = f"{UPLOAD_DIR}/{file.filename}"
     with open(loc, "wb+") as f: shutil.copyfileobj(file.file, f)
     db.add(DBRequest(req_type="ALPHA_REQ", amount=0.0, reason=reason, proof_image=loc)); db.commit()
+    notify_gp_wechat("📈 阿尔法红利申请", f"弟弟提交了一份奖金凭证\n达标说明：{reason}\n请尽快登录后台查阅凭证图片并核定金额。") # 👉 新加的这行
     return {"status": "success", "message": "阿尔法凭证已上传成功！"}
 
 @app.get("/api/v1/lp/my_requests")
