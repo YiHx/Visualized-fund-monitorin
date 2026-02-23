@@ -10,9 +10,18 @@
 </head>
 <body class="p-4 md:p-8 font-sans">
 <div id="admin-app" class="max-w-7xl mx-auto space-y-6">
-    <header class="border-b border-yellow-700/50 pb-4">
-        <h1 class="text-3xl font-bold text-yellow-500 tracking-wider">GP 全权控制台</h1>
-        <p class="text-sm text-gray-500 mt-2">拥有绝对控制权：审批流、资金注销、资产穿透与跨时空调账</p>
+    <header class="border-b border-yellow-700/50 pb-4 flex justify-between items-end">
+        <div>
+            <h1 class="text-3xl font-bold text-yellow-500 tracking-wider">GP 全权控制台</h1>
+            <p class="text-sm text-gray-500 mt-2">已开启全局心跳监听：自动同步前台动态，实时指挥</p>
+        </div>
+        <div class="flex items-center">
+            <span class="relative flex h-3 w-3 mr-2">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+            </span>
+            <span class="text-xs text-emerald-500 font-mono">实时同步中...</span>
+        </div>
     </header>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -46,10 +55,10 @@
             </div>
 
             <div class="bg-gray-900 p-6 rounded-lg border border-gray-800 shadow-lg">
-                <h2 class="text-lg font-bold text-gray-400 mb-4">底层核心账本流水 (含上帝强控记录)</h2>
+                <h2 class="text-lg font-bold text-gray-400 mb-4">底层核心账本流水 (实时)</h2>
                 <div class="overflow-y-auto max-h-64 pr-2">
                     <table class="w-full text-sm text-left text-gray-400">
-                        <tr v-for="tx in ledger" :key="tx.id" class="border-b border-gray-800 hover:bg-gray-800">
+                        <tr v-for="tx in ledger" :key="tx.id" class="border-b border-gray-800 hover:bg-gray-800 transition">
                             <td class="py-2 px-2 whitespace-nowrap">{{ tx.tx_date }}</td>
                             <td class="py-2 px-2 font-bold" :class="{'text-purple-400': tx.tx_type.includes('ADJUST'), 'text-emerald-400': tx.tx_type.includes('PRINCIPAL') || tx.tx_type.includes('ALPHA'), 'text-red-400': tx.tx_type.includes('WITHDRAWAL')}">{{ tx.tx_type }}</td>
                             <td class="py-2 px-2 font-mono">¥ {{ tx.amount }}</td>
@@ -60,9 +69,9 @@
             </div>
 
             <div class="bg-gray-900 p-6 rounded-lg border border-blue-900/50 shadow-lg">
-                <h2 class="text-lg font-bold text-blue-400 mb-4">💬 乙方留言板与回复池</h2>
+                <h2 class="text-lg font-bold text-blue-400 mb-4">💬 乙方留言板与回复池 (实时)</h2>
                 <div class="space-y-4 max-h-80 overflow-y-auto pr-2">
-                    <div v-for="msg in messages" :key="msg.id" class="bg-black p-4 rounded border border-gray-700">
+                    <div v-for="msg in messages" :key="msg.id" class="bg-black p-4 rounded border border-gray-700 transition">
                         <div class="mb-2"><span class="text-gray-500 text-xs">{{ msg.created_date }}</span><p class="text-gray-200 mt-1"><span class="font-bold text-yellow-500">乙方：</span>{{ msg.content }}</p></div>
                         <div v-if="msg.reply" class="pl-4 border-l-2 border-emerald-600 mt-3 bg-gray-900 py-2"><p class="text-emerald-400 text-sm">已回复：{{ msg.reply }}</p></div>
                         <div v-else class="mt-4 flex space-x-2">
@@ -84,8 +93,8 @@
                 </form>
                 
                 <div v-if="notices.length > 0" class="border-t border-orange-800/50 pt-4 space-y-2 max-h-40 overflow-y-auto pr-1">
-                    <p class="text-xs text-orange-500/70 mb-2">当前挂在前台的通知：</p>
-                    <div v-for="n in notices" :key="n.id" class="bg-black/50 p-2 rounded border border-orange-800/50 flex justify-between items-center group">
+                    <p class="text-xs text-orange-500/70 mb-2">当前挂在前台的通知 (自动同步)：</p>
+                    <div v-for="n in notices" :key="n.id" class="bg-black/50 p-2 rounded border border-orange-800/50 flex justify-between items-center group transition">
                         <div class="truncate mr-2 flex-1">
                             <p class="text-gray-300 text-xs truncate" :title="n.content">{{ n.content }}</p>
                             <p class="text-gray-600 text-[10px] mt-1">{{ n.publish_time }}</p>
@@ -106,13 +115,13 @@
                         </select>
                         <input v-model="adjustForm.amount" type="number" step="0.01" class="w-2/3 bg-black border border-purple-700/50 rounded p-2 text-white font-mono focus:outline-none focus:border-purple-500" placeholder="金额" required>
                     </div>
-                    <input v-model="adjustForm.description" type="text" class="w-full bg-black border border-purple-700/50 rounded p-2 text-white text-sm focus:outline-none focus:border-purple-500" placeholder="强控理由 (会写入流水)" required>
+                    <input v-model="adjustForm.description" type="text" class="w-full bg-black border border-purple-700/50 rounded p-2 text-white text-sm focus:outline-none focus:border-purple-500" placeholder="强控理由" required>
                     <button type="submit" class="w-full bg-purple-700 hover:bg-purple-600 py-2 rounded font-bold text-white transition tracking-widest">执行调账</button>
                 </form>
             </div>
 
             <div class="bg-gray-900 p-6 rounded-lg border gp-border shadow-lg">
-                <h2 class="font-bold text-yellow-500 mb-4">常规造币局 (本金/红利)</h2>
+                <h2 class="font-bold text-yellow-500 mb-4">常规造币局</h2>
                 <form @submit.prevent="injectFunds" class="space-y-3">
                     <select v-model="injectForm.tx_type" class="w-full bg-black border border-gray-700 rounded p-2 text-white"><option value="PRINCIPAL">注入滚存本金</option><option value="ALPHA">直接发放奖励</option></select>
                     <input v-model="injectForm.amount" type="number" step="0.01" class="w-full bg-black border border-gray-700 rounded p-2 text-white" placeholder="金额" required>
@@ -123,14 +132,14 @@
 
             <div class="bg-gray-900 p-6 rounded-lg border border-gray-700 shadow-lg">
                 <h2 class="font-bold text-gray-200 mb-2">穿透调仓管理</h2>
-                <div v-for="item in allocations" :key="item.asset" class="flex justify-between items-center text-sm bg-black p-2 rounded mb-2 border border-gray-800">
+                <div v-for="item in allocations" :key="item.asset" class="flex justify-between items-center text-sm bg-black p-2 rounded mb-2 border border-gray-800 transition">
                     <span class="text-gray-300">{{ item.asset }}</span>
                     <span class="text-yellow-500 font-mono">¥ {{ item.amount }}</span>
                 </div>
                 <form @submit.prevent="submitAllocation" class="space-y-3 mt-4 border-t border-gray-800 pt-3">
-                    <input v-model="allocForm.asset" type="text" class="w-full bg-black border border-gray-600 rounded p-2 text-white text-sm focus:outline-none focus:border-yellow-500" placeholder="标的名称 (如: 纳斯达克)" required>
-                    <input v-model="allocForm.amount" type="number" step="0.01" class="w-full bg-black border border-gray-600 rounded p-2 text-white text-sm focus:outline-none focus:border-yellow-500" placeholder="金额 (填0为清仓)" required>
-                    <button type="submit" class="w-full bg-gray-800 hover:bg-gray-700 py-2 rounded text-white font-bold border border-gray-600 transition tracking-widest">发送对冲指令</button>
+                    <input v-model="allocForm.asset" type="text" class="w-full bg-black border border-gray-600 rounded p-2 text-white text-sm" placeholder="标的名称" required>
+                    <input v-model="allocForm.amount" type="number" step="0.01" class="w-full bg-black border border-gray-600 rounded p-2 text-white text-sm" placeholder="金额 (0为清仓)" required>
+                    <button type="submit" class="w-full bg-gray-800 hover:bg-gray-700 py-2 rounded text-white font-bold transition">发送对冲指令</button>
                 </form>
             </div>
 
@@ -143,7 +152,7 @@
                         ⏳ 乙方尚未提取！<br><span class="text-2xl mt-1 block font-mono">倒计时: {{ quarterlyInfo.hours_left }}h</span>
                     </div>
                     <div v-if="quarterlyInfo.status === 'CLAIMED'" class="text-emerald-500 font-bold text-sm">✅ 资金已流出！提取时间：{{ quarterlyInfo.claimed_at }}</div>
-                    <div v-if="quarterlyInfo.status === 'EXPIRED'" class="text-red-500 font-bold text-sm">❌ 狩猎失败，资金已自动作废充公。</div>
+                    <div v-if="quarterlyInfo.status === 'EXPIRED'" class="text-red-500 font-bold text-sm">❌ 狩猎失败，资金已自动作废。</div>
                 </div>
                 <button @click="toggleQuarterly" class="w-full bg-blue-900 hover:bg-blue-800 text-white font-bold py-3 rounded text-sm transition">
                     重新发布 30元 派息令
@@ -167,40 +176,40 @@
             const notices = ref([]); 
             
             const injectForm = ref({ tx_type: 'PRINCIPAL', amount: '', description: '' });
-            const allocForm = ref({ asset: '', amount: '' }); // 调仓绑定的变量
+            const allocForm = ref({ asset: '', amount: '' }); 
             const adjustForm = ref({ action: 'UP', amount: '', description: '' }); 
             const noticeForm = ref('');
 
+            // 👉 核心变动：加入时间戳(t)彻底打碎浏览器的自作聪明缓存
             const fetchData = async () => {
-                pendingRequests.value = await (await fetch(`${API_BASE}/gp/pending_requests`)).json();
-                messages.value = await (await fetch(`${API_BASE}/messages`)).json();
-                const dashData = await (await fetch(`${API_BASE}/dashboard`)).json();
-                ledger.value = dashData.ledger;
-                allocations.value = dashData.allocations || [];
-                quarterlyInfo.value = dashData.quarterly_info; 
-                notices.value = await (await fetch(`${API_BASE}/lp/notices`)).json(); 
+                const t = new Date().getTime(); 
+                try {
+                    pendingRequests.value = await (await fetch(`${API_BASE}/gp/pending_requests?t=${t}`)).json();
+                    messages.value = await (await fetch(`${API_BASE}/messages?t=${t}`)).json();
+                    const dashData = await (await fetch(`${API_BASE}/dashboard?t=${t}`)).json();
+                    ledger.value = dashData.ledger;
+                    allocations.value = dashData.allocations || [];
+                    quarterlyInfo.value = dashData.quarterly_info; 
+                    notices.value = await (await fetch(`${API_BASE}/lp/notices?t=${t}`)).json(); 
+                } catch(e) { console.log("拉取更新失败"); }
             };
 
             const processRequest = async (req, isReject) => {
                 const action = isReject ? 'REJECT' : 'APPROVE';
                 let final_amount = 0;
-                
                 if (action === 'APPROVE' && req.req_type === 'ALPHA_REQ') {
                     if (!req.final_amount) { alert("🚨 批准奖金前，请务必填写您核定的具体金额！"); return; }
                     final_amount = req.final_amount;
                 }
-                
                 if (action === 'REJECT') {
                     if (!req.reject_reason || req.reject_reason.trim() === "") {
-                        alert("🚨 既然驳回，就必须让乙方死个明白。请填写驳回原因！"); 
-                        return;
+                        alert("🚨 既然驳回，就必须让乙方死个明白。请填写驳回原因！"); return;
                     }
                 }
-                
                 if(!confirm(`确定要 ${isReject ? '驳回' : '批准'} 这笔工单吗？`)) return;
                 
                 const res = await fetch(`${API_BASE}/gp/process_request/${req.id}?action=${action}&final_amount=${final_amount}&reject_reason=${encodeURIComponent(req.reject_reason || '')}`, { method: 'POST' });
-                alert((await res.json()).message);
+                if(res.ok) alert((await res.json()).message);
                 fetchData();
             };
 
@@ -212,58 +221,42 @@
                     alert((await res.json()).message);
                     noticeForm.value = '';
                     fetchData(); 
+                } else {
+                    alert("发布失败，请检查网络或刷新页面！");
                 }
             };
 
             const deleteNotice = async (id) => {
                 if(!confirm("确定要撤回这条政令吗？撤回后，乙方前台将立即消失！")) return;
                 const res = await fetch(`${API_BASE}/gp/notices/${id}`, { method: 'DELETE' });
-                if(res.ok) {
-                    alert((await res.json()).message);
-                    fetchData();
-                }
+                if(res.ok) { alert((await res.json()).message); fetchData(); }
             };
 
             const injectFunds = async () => {
                 if(!confirm("确认注入资金？")) return;
                 const fd = new FormData(); fd.append('tx_type', injectForm.value.tx_type); fd.append('amount', injectForm.value.amount); fd.append('description', injectForm.value.description);
                 const res = await fetch(`${API_BASE}/gp/inject_funds`, { method: 'POST', body: fd });
-                alert((await res.json()).message); 
-                injectForm.value = { tx_type: 'PRINCIPAL', amount: '', description: '' };
-                fetchData();
+                alert((await res.json()).message); injectForm.value = { tx_type: 'PRINCIPAL', amount: '', description: '' }; fetchData();
             };
 
             const adjustFunds = async () => {
                 const actionText = adjustForm.value.action === 'UP' ? '增加' : '扣除';
-                if(!confirm(`⚠️ 警告：这是上帝模式强控！\n确定【${actionText}】 ¥${adjustForm.value.amount} 吗？`)) return;
+                if(!confirm(`确定【${actionText}】 ¥${adjustForm.value.amount} 吗？`)) return;
                 const fd = new FormData(); fd.append('action', adjustForm.value.action); fd.append('amount', adjustForm.value.amount); fd.append('description', adjustForm.value.description);
                 const res = await fetch(`${API_BASE}/gp/adjust_funds`, { method: 'POST', body: fd });
-                if(res.ok) {
-                    alert((await res.json()).message);
-                    adjustForm.value = { action: 'UP', amount: '', description: '' };
-                    fetchData();
-                } else alert((await res.json()).detail);
+                if(res.ok) { alert((await res.json()).message); adjustForm.value = { action: 'UP', amount: '', description: '' }; fetchData(); } 
+                else alert((await res.json()).detail);
             };
 
-            // 👉 这里是发送调仓指令的方法
             const submitAllocation = async () => {
                 const fd = new FormData(); fd.append('asset_name', allocForm.value.asset); fd.append('amount', allocForm.value.amount);
-                try {
-                    const res = await fetch(`${API_BASE}/gp/asset_allocation`, { method: 'POST', body: fd });
-                    if (!res.ok) alert((await res.json()).detail); 
-                    else { 
-                        alert((await res.json()).message); 
-                        allocForm.value = { asset: '', amount: '' }; 
-                        fetchData(); 
-                    }
-                } catch (e) { alert("网络错误"); }
+                const res = await fetch(`${API_BASE}/gp/asset_allocation`, { method: 'POST', body: fd });
+                if (!res.ok) alert((await res.json()).detail); else { alert((await res.json()).message); allocForm.value = { asset: '', amount: '' }; fetchData(); }
             };
 
             const toggleQuarterly = async () => {
-                if(!confirm("确定现在放出派息令并开启 72小时 倒计时吗？")) return;
-                const res = await fetch(`${API_BASE}/gp/toggle_quarterly`, { method: 'POST' });
-                alert((await res.json()).message);
-                fetchData();
+                if(!confirm("确定现在放出派息令并开启倒计时吗？")) return;
+                const res = await fetch(`${API_BASE}/gp/toggle_quarterly`, { method: 'POST' }); alert((await res.json()).message); fetchData();
             };
 
             const replyMsg = async (msg) => {
@@ -273,7 +266,11 @@
                 if(res.ok) { alert("回复已发送给乙方。"); fetchData(); }
             };
 
-            onMounted(fetchData);
+            onMounted(() => { 
+                fetchData(); 
+                // 👉 核心变动：启动后台雷达，每 3 秒悄悄向服务器索要一次最新战况！
+                setInterval(fetchData, 3000);
+            });
             return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, replyMsg }
         }
     }).mount('#admin-app')
