@@ -152,7 +152,7 @@
                         ⏳ 乙方尚未提取！<br><span class="text-2xl mt-1 block font-mono">倒计时: {{ quarterlyInfo.hours_left }}h</span>
                     </div>
                     <div v-if="quarterlyInfo.status === 'CLAIMED'" class="text-emerald-500 font-bold text-sm">✅ 资金已流出！提取时间：{{ quarterlyInfo.claimed_at }}</div>
-                    <div v-if="quarterlyInfo.status === 'EXPIRED'" class="text-red-500 font-bold text-sm">❌ 狩猎失败，资金已自动作废。</div>
+                    <div v-if="quarterlyInfo.status === 'EXPIRED'" class="text-red-500 font-bold text-sm">❌ 狩猎失败，资金已自动作废充公。</div>
                 </div>
                 <button @click="toggleQuarterly" class="w-full bg-blue-900 hover:bg-blue-800 text-white font-bold py-3 rounded text-sm transition">
                     重新发布 30元 派息令
@@ -180,12 +180,32 @@
             const adjustForm = ref({ action: 'UP', amount: '', description: '' }); 
             const noticeForm = ref('');
 
-            // 👉 核心变动：加入时间戳(t)彻底打碎浏览器的自作聪明缓存
+            // 👉 核心修改：在抓取新数据时，把旧数据框里还没提交的打字草稿提取出来，合并进去！
             const fetchData = async () => {
                 const t = new Date().getTime(); 
                 try {
-                    pendingRequests.value = await (await fetch(`${API_BASE}/gp/pending_requests?t=${t}`)).json();
-                    messages.value = await (await fetch(`${API_BASE}/messages?t=${t}`)).json();
+                    // 1. 抓取审批工单（保护打字草稿）
+                    const newRequests = await (await fetch(`${API_BASE}/gp/pending_requests?t=${t}`)).json();
+                    pendingRequests.value = newRequests.map(newReq => {
+                        const oldReq = pendingRequests.value.find(r => r.id === newReq.id);
+                        if (oldReq) {
+                            newReq.final_amount = oldReq.final_amount; // 保留填写的核定金额
+                            newReq.reject_reason = oldReq.reject_reason; // 保留填写的驳回原因
+                        }
+                        return newReq;
+                    });
+
+                    // 2. 抓取留言列表（保护回复草稿）
+                    const newMessages = await (await fetch(`${API_BASE}/messages?t=${t}`)).json();
+                    messages.value = newMessages.map(newMsg => {
+                        const oldMsg = messages.value.find(m => m.id === newMsg.id);
+                        if (oldMsg) {
+                            newMsg.draftReply = oldMsg.draftReply; // 保留填写的回复内容
+                        }
+                        return newMsg;
+                    });
+
+                    // 3. 其他纯展示数据，直接刷新
                     const dashData = await (await fetch(`${API_BASE}/dashboard?t=${t}`)).json();
                     ledger.value = dashData.ledger;
                     allocations.value = dashData.allocations || [];
@@ -221,8 +241,6 @@
                     alert((await res.json()).message);
                     noticeForm.value = '';
                     fetchData(); 
-                } else {
-                    alert("发布失败，请检查网络或刷新页面！");
                 }
             };
 
@@ -268,7 +286,6 @@
 
             onMounted(() => { 
                 fetchData(); 
-                // 👉 核心变动：启动后台雷达，每 3 秒悄悄向服务器索要一次最新战况！
                 setInterval(fetchData, 3000);
             });
             return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, replyMsg }
