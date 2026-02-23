@@ -54,9 +54,10 @@ class DBAssetAllocation(Base):
 class DBMessage(Base):
     __tablename__ = "messages"
     id = Column(Integer, primary_key=True, index=True)
-    created_date = Column(Date, nullable=False, default=date.today)
-    content = Column(String, nullable=False) 
-    reply = Column(String, nullable=True)    
+    created_date = Column(DateTime, nullable=False, default=datetime.now)
+    content = Column(String, nullable=False)
+    reply = Column(String, nullable=True)
+    reply_time = Column(DateTime, nullable=True)
 
 class DBQuarterlyEvent(Base):
     __tablename__ = "quarterly_events"
@@ -204,7 +205,18 @@ def gp_delete_notice(notice_id: int, db: Session = Depends(get_db)):
     raise HTTPException(status_code=404, detail="找不到该通知，可能已被撤回。")
 
 @app.get("/api/v1/messages")
-def get_messages(db: Session = Depends(get_db)): return db.query(DBMessage).order_by(desc(DBMessage.id)).limit(10).all()
+def get_messages(db: Session = Depends(get_db)):
+    msgs = db.query(DBMessage).order_by(desc(DBMessage.id)).limit(10).all()
+    out = []
+    for m in msgs:
+        out.append({
+            "id": m.id,
+            "content": m.content,
+            "created_date": m.created_date.strftime("%Y-%m-%d %H:%M") if m.created_date else None,
+            "reply": m.reply,
+            "reply_time": m.reply_time.strftime("%Y-%m-%d %H:%M") if m.reply_time else None
+        })
+    return out
 
 @app.post("/api/v1/lp/messages")
 def post_message(content: str = Form(...), db: Session = Depends(get_db)):
@@ -266,7 +278,10 @@ def lp_get_my_requests(db: Session = Depends(get_db)): return db.query(DBRequest
 @app.post("/api/v1/gp/messages/{msg_id}/reply")
 def reply_message(msg_id: int, reply: str = Form(...), db: Session = Depends(get_db)):
     msg = db.query(DBMessage).filter(DBMessage.id == msg_id).first()
-    if msg: msg.reply = reply; db.commit()
+    if msg:
+        msg.reply = reply
+        msg.reply_time = datetime.now()
+        db.commit()
     return {"status": "success"}
 
 @app.post("/api/v1/gp/inject_funds")

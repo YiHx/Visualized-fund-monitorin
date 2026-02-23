@@ -182,13 +182,21 @@
             </form>
             
             <div class="space-y-4 max-h-64 overflow-y-auto pr-2">
-                <div v-for="msg in messages" :key="msg.id" class="bg-black p-4 rounded border border-gray-800 text-sm transition relative">
-                    <div class="text-gray-300"><span class="text-blue-400 font-bold">乙方:</span> {{ msg.content }}</div>
-                    
-                    <div v-if="msg.reply" class="mt-3 pl-4 border-l-2 border-yellow-600 bg-gray-900/50 py-3 text-gray-400">
-                        <span class="font-bold text-yellow-600">回复:</span> {{ msg.reply }}
+                    <div v-for="msg in messages" :key="msg.id" class="bg-black p-4 rounded border border-gray-800 text-sm transition relative">
+                        <div class="text-gray-300">
+                            <div class="flex justify-between items-start">
+                                <div><span class="text-blue-400 font-bold">乙方:</span> {{ msg.content }}</div>
+                                <div class="text-xs text-gray-500 ml-4">{{ msg.created_date }}</div>
+                            </div>
+                        </div>
+
+                        <div v-if="msg.reply" class="mt-3 pl-4 border-l-2 border-yellow-600 bg-gray-900/50 py-3 text-gray-400">
+                            <div class="flex justify-between items-start">
+                                <div><span class="font-bold text-yellow-600">GP 回复:</span> {{ msg.reply }}</div>
+                                <div class="text-xs text-gray-500 ml-4">{{ msg.reply_time }}</div>
+                            </div>
+                        </div>
                     </div>
-                </div>
             </div>
         </div>
     </div>
