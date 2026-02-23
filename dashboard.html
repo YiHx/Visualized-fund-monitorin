@@ -109,7 +109,9 @@
                 <form @submit.prevent="submitWithdrawal" class="space-y-4">
                     <input v-model="form.amount" type="number" step="0.01" class="w-full bg-black border border-gray-700 rounded p-2 text-white" placeholder="提款金额" required>
                     <textarea v-model="form.reason" class="w-full bg-black border border-gray-700 rounded p-2 text-white" placeholder="资金用途自述..." required></textarea>
-                    <button type="submit" class="bg-red-900/80 text-white font-bold py-2 rounded w-full border border-red-700 transition">提交审查</button>
+                    <button type="submit" :disabled="isUploading" class="bg-emerald-800/80 text-white font-bold py-2 rounded w-full border border-emerald-600 transition disabled:opacity-50">
+                            {{ isUploading ? '🚀 正在拼命上传中...' : '上传凭证' }}
+                    </button>
                 </form>
             </div>
             <div class="border border-gray-700 rounded-lg p-6 bg-gray-900 shadow-lg">
@@ -117,7 +119,9 @@
                 <form @submit.prevent="submitAlpha" class="space-y-4">
                     <input v-model="alphaForm.reason" type="text" class="w-full bg-black border border-gray-700 rounded p-2 text-white" placeholder="达标说明" required>
                     <input type="file" ref="fileInput" class="w-full text-sm text-gray-500 file:bg-gray-700 file:text-white" required>
-                    <button type="submit" class="bg-emerald-800/80 text-white font-bold py-2 rounded w-full border border-emerald-600 transition">上传凭证</button>
+                    <button type="submit" :disabled="isUploading" class="bg-emerald-800/80 text-white font-bold py-2 rounded w-full border border-emerald-600 transition disabled:opacity-50">
+                        {{ isUploading ? '🚀 正在拼命上传中...' : '📤 上传凭证' }}
+                    </button>
                 </form>
             </div>
         </div>
@@ -183,6 +187,7 @@
             
             const messages = ref([]);
             const myRequests = ref([]);
+            const isUploading = ref(false); // 新增：控制上传按钮状态的开关
             const notices = ref([]);
 
             // 👉 核心变动：加入时间戳(t)彻底打碎浏览器的自作聪明缓存
@@ -237,15 +242,43 @@
 
             const submitWithdrawal = async () => {
                 if (!confirm("警告：任何提前提取都会直接扣减您的有效本金。确定提交吗？")) return;
+                isUploading.value = true;
                 const fd = new FormData(); fd.append('amount', form.value.amount); fd.append('reason', form.value.reason);
                 const res = await fetch(`${API_BASE}/lp/request_withdrawal`, { method: 'POST', body: fd });
                 if (!res.ok) alert((await res.json()).detail); else { alert("提款申请工单已生成，等待审计批准。"); form.value = {amount:'', reason:''}; fetchPrivateData(); fetchPublicData(); }
+                isUploading.value = false;
             };
 
             const submitAlpha = async () => {
-                const fd = new FormData(); fd.append('reason', alphaForm.value.reason); fd.append('file', fileInput.value.files[0]);
-                const res = await fetch(`${API_BASE}/lp/request_alpha`, { method: 'POST', body: fd }); 
-                if(res.ok) { alert("凭证附件已成功上传！请等待 GP 核定最终的奖金金额。"); alphaForm.value = {reason:''}; fetchPrivateData(); }
+                const file = fileInput.value.files[0];
+                if (!file) { alert("请先选择一张图片！"); return; }
+                
+                // 👉 核心风控：如果图片大于 5MB，直接拦截！
+                if (file.size > 5 * 1024 * 1024) { 
+                    alert("🚨 图片太大了（超过5MB）！\n\n如果一直上传失败，请把成绩单在手机里【截个图】，然后上传那张截图！"); 
+                    return; 
+                }
+
+                isUploading.value = true; // 按钮变成“正在上传...”
+                try {
+                    const fd = new FormData(); 
+                    fd.append('reason', alphaForm.value.reason); 
+                    fd.append('file', file);
+                    
+                    const res = await fetch(`${API_BASE}/lp/request_alpha`, { method: 'POST', body: fd }); 
+                    if(res.ok) { 
+                        alert("凭证附件已成功上传！请等待 GP 核定最终的奖金金额。"); 
+                        alphaForm.value = {reason:''}; 
+                        fileInput.value.value = ''; // 清空选择的文件
+                        fetchPrivateData(); 
+                    } else {
+                        alert("上传被服务器拒绝，请刷新后重试。");
+                    }
+                } catch(e) {
+                    alert("🚨 网络超时！文件可能太大或者信号不好，请切到 WiFi 或上传截图重试。");
+                } finally {
+                    isUploading.value = false; // 不管成功失败，恢复按钮
+                }
             };
 
             const claimQuarterly = async () => {
@@ -272,7 +305,7 @@
                 navData, allocations, limitStatus, quarterlyInfo, notices,
                 isAuthenticated, showAuthModal, pinInput, verifyPin, closeAuthModal, logout,
                 form, alphaForm, fileInput, msgInput, messages, myRequests,
-                submitWithdrawal, submitAlpha, claimQuarterly, submitMessage 
+                submitWithdrawal, submitAlpha, claimQuarterly, submitMessage, isUploading
             }
         }
     }).mount('#app')
