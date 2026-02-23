@@ -185,20 +185,8 @@
                 <div v-for="msg in messages" :key="msg.id" class="bg-black p-4 rounded border border-gray-800 text-sm transition relative">
                     <div class="text-gray-300"><span class="text-blue-400 font-bold">乙方:</span> {{ msg.content }}</div>
                     
-                    <div v-if="msg.reply" class="mt-3 pl-4 border-l-2 border-yellow-600 bg-gray-900/50 py-3 relative" :class="readReplies.includes(msg.id) ? 'text-gray-400' : 'text-gray-200 border-l-4 border-red-500 bg-red-900/10'">
-                        
-                        <span v-if="!readReplies.includes(msg.id)" class="absolute top-3 right-3 flex h-3 w-3">
-                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                            <span class="relative inline-flex rounded-full h-3 w-3 bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)]"></span>
-                        </span>
-                        
-                        <span class="font-bold" :class="readReplies.includes(msg.id) ? 'text-yellow-600' : 'text-yellow-400'">GP 回复:</span> {{ msg.reply }}
-                        
-                        <div v-if="!readReplies.includes(msg.id)" class="mt-3 text-right">
-                            <button @click="markRead(msg.id)" class="text-xs bg-red-900/50 hover:bg-red-800 text-white px-3 py-1 rounded border border-red-700 transition font-bold tracking-widest shadow-lg">
-                                收到批示 (标为已读)
-                            </button>
-                        </div>
+                    <div v-if="msg.reply" class="mt-3 pl-4 border-l-2 border-yellow-600 bg-gray-900/50 py-3 text-gray-400">
+                        <span class="font-bold text-yellow-600">GP 回复:</span> {{ msg.reply }}
                     </div>
                 </div>
             </div>
@@ -234,10 +222,9 @@
             const isUploading = ref(false);
             const isSubmitting = ref(false);
 
-            // 👉 新增状态：弹窗控制与本地已读记忆
+            // 👉 新增状态：弹窗控制
             const showNoticeModal = ref(false);
             const hasSeenNoticesThisSession = ref(false); // 防止每次轮询都弹窗
-            const readReplies = ref(JSON.parse(localStorage.getItem('readReplies') || '[]'));
 
             const fetchPublicData = async () => {
                 const t = new Date().getTime();
@@ -270,13 +257,7 @@
 
             const closeNoticeModal = () => { showNoticeModal.value = false; };
 
-            // 👉 标记留言为已读
-            const markRead = (id) => {
-                if (!readReplies.value.includes(id)) {
-                    readReplies.value.push(id);
-                    localStorage.setItem('readReplies', JSON.stringify(readReplies.value));
-                }
-            };
+            // 留言已读功能已移除（前端简化）
 
             const verifyPin = async () => {
                 try {
@@ -359,7 +340,7 @@
                 form, alphaForm, fileInput, msgInput, messages, myRequests,
                 submitWithdrawal, submitAlpha, claimQuarterly, submitMessage,
                 isUploading, isSubmitting,
-                showNoticeModal, closeNoticeModal, readReplies, markRead // 暴露新变量给模板
+                showNoticeModal, closeNoticeModal // 暴露新变量给模板
             }
         }
     }).mount('#app')
