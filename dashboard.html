@@ -42,8 +42,10 @@
         <div class="absolute top-0 left-1/2 transform -translate-x-1/2 w-full h-1 bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.8)]"></div>
         <h2 class="text-gray-400 text-sm mb-4">底层资产理论应得总值 (R_total)</h2>
         <div class="text-5xl md:text-6xl font-bold text-emerald-400 neon-text tracking-wider">¥ {{ navData.R_total || '0.00' }}</div>
-        <div class="mt-8 flex justify-center space-x-8 text-sm border-t border-gray-700 pt-4 max-w-md mx-auto">
+        
+        <div class="mt-8 flex flex-wrap justify-center gap-6 text-sm border-t border-gray-700 pt-4 max-w-lg mx-auto">
             <span class="text-gray-400">有效本金: <span class="text-white font-mono">¥{{ navData.effective_principal }}</span></span>
+            <span class="text-gray-400">累计奖金: <span class="text-yellow-400 font-mono">+¥{{ navData.total_alpha !== undefined ? navData.total_alpha : '0.00' }}</span></span>
             <span class="text-gray-400">已生复利: <span class="text-emerald-400 font-mono">+¥{{ navData.total_compound_interest }}</span></span>
         </div>
     </div>
@@ -53,11 +55,9 @@
             <h3 class="text-yellow-500 text-sm font-bold tracking-widest uppercase">底层资产穿透报告 (资金真实去向)</h3>
             <span class="ml-2 text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded">PUBLIC VIEW</span>
         </div>
-        
         <div v-if="!allocations || allocations.length === 0" class="text-sm text-gray-500 py-3 border border-dashed border-gray-700 rounded text-center">
-            目前资金处于纯粹的系统备付金状态，GP 暂未进行任何跨资产宏观配置。
+            目前资金处于纯粹的系统备付金状态。
         </div>
-        
         <div v-else class="space-y-3">
             <div v-for="item in allocations" :key="item.asset" class="flex justify-between items-center bg-gray-900 p-4 rounded border border-gray-700 shadow-inner">
                 <span class="text-gray-200 font-bold text-lg">{{ item.asset }}</span>
@@ -192,7 +192,7 @@
             
             const messages = ref([]);
             const myRequests = ref([]);
-            const notices = ref([]); // 👉 新增：装载通知的变量
+            const notices = ref([]);
 
             const fetchPublicData = async () => {
                 const dashData = await (await fetch(`${API_BASE}/dashboard`)).json();
@@ -206,7 +206,7 @@
                 limitStatus.value = await (await fetch(`${API_BASE}/lp/limit_status`)).json();
                 messages.value = await (await fetch(`${API_BASE}/messages`)).json();
                 myRequests.value = await (await fetch(`${API_BASE}/lp/my_requests`)).json();
-                notices.value = await (await fetch(`${API_BASE}/lp/notices`)).json(); // 👉 拉取全网通知
+                notices.value = await (await fetch(`${API_BASE}/lp/notices`)).json();
             };
 
             const verifyPin = async () => {

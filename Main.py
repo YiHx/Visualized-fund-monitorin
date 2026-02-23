@@ -64,14 +64,12 @@ class DBQuarterlyEvent(Base):
     status = Column(String, default="ACTIVE")          
     claimed_at = Column(DateTime, nullable=True)       
 
-# 👉 新增：前台通知广播表
 class DBNotice(Base):
     __tablename__ = "notices"
     id = Column(Integer, primary_key=True, index=True)
     publish_time = Column(DateTime, default=datetime.now)
     content = Column(String, nullable=False)
 
-# 这里会自动建出新表，不会破坏老数据
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="家庭高净值资产控制台")
@@ -98,7 +96,7 @@ def get_db():
     finally: db.close()
 
 # ==========================================
-# 2. 核心算法与时间引擎
+# 2. 核心算法与引擎
 # ==========================================
 def get_dynamic_monthly_limit():
     BASE_LIMIT = 100.0
@@ -135,7 +133,7 @@ def calculate_system_nav(db: Session, current_date: date):
         if inflow.tx_type in ['PRINCIPAL', 'ADJUST_UP']: total_principal += effective_amount
         else: total_alpha += effective_amount
     r_total = total_principal + total_alpha + total_interest
-    return { "R_total": round(r_total, 4), "effective_principal": round(total_principal, 2), "total_compound_interest": round(total_interest, 4) }
+    return { "R_total": round(r_total, 4), "effective_principal": round(total_principal, 2), "total_alpha": round(total_alpha, 2), "total_compound_interest": round(total_interest, 4) }
 
 def get_quarterly_info(db: Session):
     event = db.query(DBQuarterlyEvent).order_by(desc(DBQuarterlyEvent.id)).first()
@@ -149,8 +147,7 @@ def get_quarterly_info(db: Session):
         seconds_left = (event.issued_at + timedelta(hours=72) - now).total_seconds()
         hours_left = round(max(0, seconds_left) / 3600, 1)
     elif event.status == "EXPIRED":
-        if now <= event.issued_at + timedelta(hours=72) + timedelta(hours=72):
-            show_expired = True
+        if now <= event.issued_at + timedelta(hours=72) + timedelta(hours=72): show_expired = True
     return { "status": event.status, "hours_left": hours_left, "show_expired": show_expired, "issued_at": event.issued_at.strftime("%Y-%m-%d %H:%M"), "claimed_at": event.claimed_at.strftime("%Y-%m-%d %H:%M") if event.claimed_at else None }
 
 # ==========================================
@@ -171,18 +168,26 @@ def get_dashboard(db: Session = Depends(get_db)):
         "quarterly_info": get_quarterly_info(db)
     }
 
-# 👉 新增：获取最新通知供前台展示
 @app.get("/api/v1/lp/notices")
 def lp_get_notices(db: Session = Depends(get_db)):
     notices = db.query(DBNotice).order_by(desc(DBNotice.id)).limit(5).all()
     return [{"id": n.id, "content": n.content, "publish_time": n.publish_time.strftime("%Y-%m-%d %H:%M")} for n in notices]
 
-# 👉 新增：GP发布通知接口
 @app.post("/api/v1/gp/notices")
 def gp_post_notice(content: str = Form(...), db: Session = Depends(get_db)):
     db.add(DBNotice(content=content))
     db.commit()
     return {"status": "success", "message": "全网通知已强势发布！"}
+
+# 👉 新增：GP 撤回通知的绝杀接口
+@app.delete("/api/v1/gp/notices/{notice_id}")
+def gp_delete_notice(notice_id: int, db: Session = Depends(get_db)):
+    notice = db.query(DBNotice).filter(DBNotice.id == notice_id).first()
+    if notice:
+        db.delete(notice)
+        db.commit()
+        return {"status": "success", "message": "指令已执行，该通知已从全网彻底抹除！"}
+    raise HTTPException(status_code=404, detail="找不到该通知，可能已被撤回。")
 
 @app.get("/api/v1/messages")
 def get_messages(db: Session = Depends(get_db)): return db.query(DBMessage).order_by(desc(DBMessage.id)).limit(10).all()
@@ -258,24 +263,18 @@ def toggle_quarterly(db: Session = Depends(get_db)):
 @app.get("/api/v1/gp/pending_requests")
 def gp_get_pending_requests(db: Session = Depends(get_db)): return db.query(DBRequest).filter(DBRequest.status == "PENDING").all()
 
-# 👉 核心修改：处理驳回原因，并将废单金额清零
 @app.post("/api/v1/gp/process_request/{req_id}")
 def gp_process_request(req_id: int, action: str, final_amount: float = 0.0, reject_reason: str = "", db: Session = Depends(get_db)):
     req = db.query(DBRequest).filter(DBRequest.id == req_id).first()
-    
     if action == "REJECT": 
         req.status = "REJECTED"
-        req.amount = 0.0 # 强制金额归零
-        if reject_reason:
-            # 把驳回原因直接盖章在原申请单的理由里，让乙方一眼就能看见
-            req.reason = req.reason + f" 【GP驳回: {reject_reason}】"
-            
+        req.amount = 0.0 
+        if reject_reason: req.reason = req.reason + f" 【GP驳回: {reject_reason}】"
     if action == "APPROVE":
         req.status = "APPROVED"
         actual = final_amount if req.req_type == "ALPHA_REQ" else req.amount
         if req.req_type == "ALPHA_REQ": req.amount = final_amount
         db.add(DBTransaction(tx_type="WITHDRAWAL" if req.req_type == "WITHDRAWAL_REQ" else "ALPHA", amount=actual, description=f"审计批准: {req.reason}"))
-        
     db.commit()
     return {"status": "success", "message": f"工单审批完成！已执行 {action} 指令。"}
 
