@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String, Float, Date, DateTime, desc, extract
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
@@ -79,6 +80,7 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="家庭高净值资产控制台")
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 security = HTTPBasic()
 def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
@@ -154,21 +156,66 @@ def calculate_system_nav(db: Session, current_date: date):
     return { "R_total": round(r_total, 4), "effective_principal": round(total_principal, 2), "total_alpha": round(total_alpha, 2), "total_compound_interest": round(total_interest, 4) }
 
 def get_display_allocations(db: Session, nav_total: float):
-    """Return allocation amounts adjusted to current NAV for consistent dashboard display."""
+    """Build allocation view with cash reserve and proportional shrink on NAV drawdown."""
     raw_allocations = db.query(DBAssetAllocation).all()
-    if not raw_allocations:
-        return []
+    positive_allocs = [a for a in raw_allocations if a.allocated_amount and a.allocated_amount > 0]
+    raw_total = sum(a.allocated_amount for a in positive_allocs)
 
-    raw_total = sum(a.allocated_amount for a in raw_allocations if a.allocated_amount and a.allocated_amount > 0)
-    if raw_total <= 0 or nav_total <= 0:
-        return [{"asset": a.asset_name, "amount": 0.0} for a in raw_allocations]
+    # No configured assets: the whole NAV is treated as idle cash.
+    if not positive_allocs:
+        cash_only = round(max(0.0, nav_total), 2)
+        return {
+            "allocations": ([{"asset": "现金仓", "amount": cash_only}] if cash_only > 0 else []),
+            "meta": {
+                "configured_total": 0.0,
+                "display_total": cash_only,
+                "cash_reserve": cash_only,
+                "scale_factor": 1.0,
+                "is_scaled": False
+            }
+        }
 
-    # If configured allocation exceeds current NAV, scale all legs proportionally.
-    scale = min(1.0, nav_total / raw_total)
-    return [{
-        "asset": a.asset_name,
-        "amount": round(max(0.0, a.allocated_amount * scale), 2)
-    } for a in raw_allocations]
+    if nav_total <= 0:
+        zero_allocs = [{"asset": a.asset_name, "amount": 0.0} for a in positive_allocs]
+        return {
+            "allocations": zero_allocs,
+            "meta": {
+                "configured_total": round(raw_total, 2),
+                "display_total": 0.0,
+                "cash_reserve": 0.0,
+                "scale_factor": 0.0,
+                "is_scaled": True
+            }
+        }
+
+    if raw_total <= nav_total:
+        cash_reserve = round(nav_total - raw_total, 2)
+        allocs = [{"asset": a.asset_name, "amount": round(a.allocated_amount, 2)} for a in positive_allocs]
+        if cash_reserve > 0:
+            allocs.append({"asset": "现金仓", "amount": cash_reserve})
+        return {
+            "allocations": allocs,
+            "meta": {
+                "configured_total": round(raw_total, 2),
+                "display_total": round(sum(item["amount"] for item in allocs), 2),
+                "cash_reserve": cash_reserve,
+                "scale_factor": 1.0,
+                "is_scaled": False
+            }
+        }
+
+    scale = nav_total / raw_total
+    allocs = [{"asset": a.asset_name, "amount": round(a.allocated_amount * scale, 2)} for a in positive_allocs]
+    return {
+        "allocations": allocs,
+        "meta": {
+            "configured_total": round(raw_total, 2),
+            "display_total": round(sum(item["amount"] for item in allocs), 2),
+            "cash_reserve": 0.0,
+            "scale_factor": round(scale, 6),
+            "is_scaled": True
+        }
+    }
 
 def get_quarterly_info(db: Session):
     event = db.query(DBQuarterlyEvent).order_by(desc(DBQuarterlyEvent.id)).first()
@@ -197,10 +244,12 @@ def verify_lp(req: VerifyReq):
 @app.get("/api/v1/dashboard")
 def get_dashboard(db: Session = Depends(get_db)):
     nav = calculate_system_nav(db, date.today())
+    allocation_result = get_display_allocations(db, nav["R_total"])
     return {
         "nav": nav,
         "ledger": db.query(DBTransaction).order_by(desc(DBTransaction.tx_date), desc(DBTransaction.id)).limit(20).all(),
-        "allocations": get_display_allocations(db, nav["R_total"]),
+        "allocations": allocation_result["allocations"],
+        "allocation_meta": allocation_result["meta"],
         "quarterly_info": get_quarterly_info(db)
     }
 

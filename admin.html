@@ -164,7 +164,7 @@
 </div>
 
 <script>
-    const { createApp, ref, onMounted } = Vue
+    const { createApp, ref, onMounted, onUnmounted } = Vue
     createApp({
         setup() {
             const API_BASE = '/api/v1';
@@ -180,12 +180,34 @@
             const adjustForm = ref({ action: 'UP', amount: '', description: '' }); 
             const noticeForm = ref('');
 
+            const POLL_VISIBLE_MS = 4000;
+            const POLL_HIDDEN_MS = 15000;
+            const FETCH_TIMEOUT_MS = 8000;
+            let pollTimer = null;
+            let fetchingAdmin = false;
+
+            const fetchJsonWithTimeout = async (url, options = {}) => {
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+                try {
+                    const res = await fetch(url, { ...options, signal: controller.signal, cache: 'no-store' });
+                    if (!res.ok) {
+                        throw new Error(`HTTP ${res.status}`);
+                    }
+                    return await res.json();
+                } finally {
+                    clearTimeout(timer);
+                }
+            };
+
             // 👉 核心修改：在抓取新数据时，把旧数据框里还没提交的打字草稿提取出来，合并进去！
             const fetchData = async () => {
+                if (fetchingAdmin) return;
+                fetchingAdmin = true;
                 const t = new Date().getTime(); 
                 try {
                     // 1. 抓取审批工单（保护打字草稿）
-                    const newRequests = await (await fetch(`${API_BASE}/gp/pending_requests?t=${t}`)).json();
+                    const newRequests = await fetchJsonWithTimeout(`${API_BASE}/gp/pending_requests?t=${t}`);
                     pendingRequests.value = newRequests.map(newReq => {
                         const oldReq = pendingRequests.value.find(r => r.id === newReq.id);
                         if (oldReq) {
@@ -196,7 +218,7 @@
                     });
 
                     // 2. 抓取留言列表（保护回复草稿）
-                    const newMessages = await (await fetch(`${API_BASE}/messages?t=${t}`)).json();
+                    const newMessages = await fetchJsonWithTimeout(`${API_BASE}/messages?t=${t}`);
                     messages.value = newMessages.map(newMsg => {
                         const oldMsg = messages.value.find(m => m.id === newMsg.id);
                         if (oldMsg) {
@@ -206,12 +228,19 @@
                     });
 
                     // 3. 其他纯展示数据，直接刷新
-                    const dashData = await (await fetch(`${API_BASE}/dashboard?t=${t}`)).json();
+                    const dashData = await fetchJsonWithTimeout(`${API_BASE}/dashboard?t=${t}`);
                     ledger.value = dashData.ledger;
                     allocations.value = dashData.allocations || [];
                     quarterlyInfo.value = dashData.quarterly_info; 
-                    notices.value = await (await fetch(`${API_BASE}/lp/notices?t=${t}`)).json(); 
+                    notices.value = await fetchJsonWithTimeout(`${API_BASE}/lp/notices?t=${t}`); 
                 } catch(e) { console.log("拉取更新失败"); }
+                finally { fetchingAdmin = false; }
+            };
+
+            const restartPolling = () => {
+                if (pollTimer) clearInterval(pollTimer);
+                const interval = document.hidden ? POLL_HIDDEN_MS : POLL_VISIBLE_MS;
+                pollTimer = setInterval(fetchData, interval);
             };
 
             const processRequest = async (req, isReject) => {
@@ -286,7 +315,13 @@
 
             onMounted(() => { 
                 fetchData(); 
-                setInterval(fetchData, 3000);
+                restartPolling();
+                document.addEventListener('visibilitychange', restartPolling);
+            });
+
+            onUnmounted(() => {
+                if (pollTimer) clearInterval(pollTimer);
+                document.removeEventListener('visibilitychange', restartPolling);
             });
             return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, replyMsg }
         }

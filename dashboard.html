@@ -81,6 +81,14 @@
             <h3 class="text-yellow-500 text-sm font-bold tracking-widest uppercase">底层资产穿透报告 (资金真实去向)</h3>
             <span class="ml-2 text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded">PUBLIC VIEW</span>
         </div>
+        <div class="mb-4 text-xs">
+            <div v-if="allocationMeta.is_scaled" class="text-red-400 border border-red-800/70 bg-red-900/20 px-3 py-2 rounded">
+                当前净值低于配置总额，系统已按比例压缩持仓展示（缩放系数: {{ allocationMeta.scale_factor }}）。
+            </div>
+            <div v-else-if="allocationMeta.cash_reserve > 0" class="text-emerald-400 border border-emerald-800/70 bg-emerald-900/20 px-3 py-2 rounded">
+                当前存在现金仓：¥ {{ allocationMeta.cash_reserve }}，可用于后续提款缓冲。
+            </div>
+        </div>
         <div v-if="!allocations || allocations.length === 0" class="text-sm text-gray-500 py-3 border border-dashed border-gray-700 rounded text-center">暂无资产配置跨仓。</div>
         <div v-else class="space-y-3">
             <div v-for="item in allocations" :key="item.asset" class="flex justify-between items-center bg-gray-900 p-4 rounded border border-gray-700 shadow-inner transition-all">
@@ -205,13 +213,14 @@
 <style>.animate-pulse-slow { animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite; } @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .8; } } .animate-fade-in-down { animation: fadeInDown 0.4s ease-out; } @keyframes fadeInDown { from { opacity: 0; transform: translateY(-15px); } to { opacity: 1; transform: translateY(0); } }</style>
 
 <script>
-    const { createApp, ref, onMounted } = Vue
+    const { createApp, ref, onMounted, onUnmounted } = Vue
     createApp({
         setup() {
             const API_BASE = '/api/v1';
             const navData = ref({});
             const limitStatus = ref({});
             const allocations = ref([]);
+            const allocationMeta = ref({});
             const quarterlyInfo = ref({});
             
             const isAuthenticated = ref(localStorage.getItem('lp_auth') === 'true');
@@ -230,29 +239,56 @@
             const isUploading = ref(false);
             const isSubmitting = ref(false);
 
+            const POLL_VISIBLE_MS = 4000;
+            const POLL_HIDDEN_MS = 15000;
+            const FETCH_TIMEOUT_MS = 8000;
+            let pollTimer = null;
+            let fetchingPublic = false;
+            let fetchingPrivate = false;
+
             // 👉 新增状态：弹窗控制
             const showNoticeModal = ref(false);
             const hasSeenNoticesThisSession = ref(false); // 防止每次轮询都弹窗
 
+            const fetchJsonWithTimeout = async (url, options = {}) => {
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+                try {
+                    const res = await fetch(url, { ...options, signal: controller.signal, cache: 'no-store' });
+                    if (!res.ok) {
+                        throw new Error(`HTTP ${res.status}`);
+                    }
+                    return await res.json();
+                } finally {
+                    clearTimeout(timer);
+                }
+            };
+
             const fetchPublicData = async () => {
+                if (fetchingPublic) return;
+                fetchingPublic = true;
                 const t = new Date().getTime();
                 try {
-                    const dashData = await (await fetch(`${API_BASE}/dashboard?t=${t}`)).json();
+                    const dashData = await fetchJsonWithTimeout(`${API_BASE}/dashboard?t=${t}`);
                     navData.value = dashData.nav;
                     allocations.value = dashData.allocations;
+                    allocationMeta.value = dashData.allocation_meta || {};
                     quarterlyInfo.value = dashData.quarterly_info;
                 } catch(e) {}
+                finally { fetchingPublic = false; }
             };
 
             const fetchPrivateData = async () => {
                 if(!isAuthenticated.value) return;
+                if (fetchingPrivate) return;
+                fetchingPrivate = true;
                 const t = new Date().getTime();
                 try {
-                    limitStatus.value = await (await fetch(`${API_BASE}/lp/limit_status?t=${t}`)).json();
-                    messages.value = await (await fetch(`${API_BASE}/messages?t=${t}`)).json();
-                    myRequests.value = await (await fetch(`${API_BASE}/lp/my_requests?t=${t}`)).json();
+                    limitStatus.value = await fetchJsonWithTimeout(`${API_BASE}/lp/limit_status?t=${t}`);
+                    messages.value = await fetchJsonWithTimeout(`${API_BASE}/messages?t=${t}`);
+                    myRequests.value = await fetchJsonWithTimeout(`${API_BASE}/lp/my_requests?t=${t}`);
                     
-                    const newNotices = await (await fetch(`${API_BASE}/lp/notices?t=${t}`)).json();
+                    const newNotices = await fetchJsonWithTimeout(`${API_BASE}/lp/notices?t=${t}`);
                     notices.value = newNotices;
                     
                     // 👉 如果有通知，且本次登录还没弹过窗，就强制弹出！
@@ -261,6 +297,18 @@
                         hasSeenNoticesThisSession.value = true; 
                     }
                 } catch(e) {}
+                finally { fetchingPrivate = false; }
+            };
+
+            const runPolling = () => {
+                fetchPublicData();
+                if (isAuthenticated.value) fetchPrivateData();
+            };
+
+            const restartPolling = () => {
+                if (pollTimer) clearInterval(pollTimer);
+                const interval = document.hidden ? POLL_HIDDEN_MS : POLL_VISIBLE_MS;
+                pollTimer = setInterval(runPolling, interval);
             };
 
             const closeNoticeModal = () => { showNoticeModal.value = false; };
@@ -339,16 +387,18 @@
             };
 
             onMounted(() => { 
-                fetchPublicData(); 
-                fetchPrivateData(); 
-                setInterval(() => {
-                    fetchPublicData();
-                    if(isAuthenticated.value) fetchPrivateData();
-                }, 3000);
+                runPolling();
+                restartPolling();
+                document.addEventListener('visibilitychange', restartPolling);
+            });
+
+            onUnmounted(() => {
+                if (pollTimer) clearInterval(pollTimer);
+                document.removeEventListener('visibilitychange', restartPolling);
             });
             
             return { 
-                navData, allocations, limitStatus, quarterlyInfo, notices,
+                navData, allocations, allocationMeta, limitStatus, quarterlyInfo, notices,
                 isAuthenticated, showAuthModal, pinInput, verifyPin, closeAuthModal, logout,
                 form, alphaForm, fileInput, msgInput, messages, myRequests,
                 submitWithdrawal, submitAlpha, claimQuarterly, submitMessage,
