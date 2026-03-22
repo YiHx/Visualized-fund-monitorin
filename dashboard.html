@@ -47,6 +47,9 @@
                 🔒 乙方身份验证
             </button>
             <div v-else class="flex items-center space-x-4">
+                <button @click="initiateCall" class="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-2 px-4 rounded transition shadow-lg">
+                    🎥 发起通话
+                </button>
                 <span class="text-emerald-400 text-sm font-bold border border-emerald-500 bg-emerald-900/30 px-3 py-1 rounded">✅ 乙方已授权</span>
                 <button @click="logout" class="text-sm text-gray-400 hover:text-white underline transition">退出身份</button>
             </div>
@@ -448,6 +451,56 @@
 
             const closeAuthModal = () => { showAuthModal.value = false; pinInput.value = ''; };
 
+            const initiateCall = async () => {
+                try {
+                    // 1. 向后台发送通话请求
+                    const res = await fetch(`${API_BASE}/lp/initiate_call`, { method: 'POST' });
+                    if (!res.ok) {
+                        alert('发起通话失败，请检查网络');
+                        return;
+                    }
+
+                    const data = await res.json();
+                    const callId = data.call_id;
+                    const callUrl = `/video_call?call_id=${callId}&user_type=lp`;
+
+                    // 2. 弹出确认窗口
+                    alert(`已发送通话请求给甲方，正在等待接听...\n甲方已收到微信提醒。\n请等待30秒...`);
+
+                    // 3. 打开本地通话页面
+                    const callWindow = window.open(callUrl, 'call', 'width=1280,height=720');
+
+                    // 4. 轮询检查通话状态
+                    let timeoutCount = 0;
+                    const pollInterval = setInterval(async () => {
+                        try {
+                            const statusRes = await fetch(`${API_BASE}/check_call_status/${callId}`, { method: 'POST' });
+                            const statusData = await statusRes.json();
+
+                            if (statusData.status === 'TIMEOUT') {
+                                clearInterval(pollInterval);
+                                if (callWindow && !callWindow.closed) {
+                                    callWindow.close();
+                                }
+                                alert('对方可能正在忙，请稍后再拨。');
+                            } else if (statusData.status === 'ACCEPTED') {
+                                clearInterval(pollInterval);
+                                // 通话已接受，通话窗口会自动建立连接
+                                console.log('通话已被接受');
+                            }
+                        } catch (error) {
+                            console.warn('轮询出错:', error);
+                        }
+                    }, 500); // 每 500ms 检查一次
+
+                    // 30 秒后停止轮询
+                    setTimeout(() => clearInterval(pollInterval), 30000);
+                } catch (error) {
+                    console.error('发起通话失败:', error);
+                    alert('发起通话出错，请稍后重试');
+                }
+            };
+
             const logout = () => {
                 isAuthenticated.value = false; localStorage.removeItem('lp_auth');
                 limitStatus.value = {}; messages.value = []; myRequests.value = []; notices.value = [];
@@ -554,7 +607,7 @@
             
             return { 
                 navData, allocations, allocationMeta, limitStatus, quarterlyInfo, notices,
-                isAuthenticated, showAuthModal, pinInput, verifyPin, closeAuthModal, logout,
+                isAuthenticated, showAuthModal, pinInput, verifyPin, closeAuthModal, logout, initiateCall,
                 form, alphaForm, fileInput, msgInput, msgFileInput, selectedMessageFile, messages, myRequests,
                 submitWithdrawal, submitAlpha, claimQuarterly, submitMessage, handleMessageFileSelect, isImageFile, isVideoFile, openMediaModal,
                 isUploading, isSubmitting,

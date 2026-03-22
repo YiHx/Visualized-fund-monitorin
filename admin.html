@@ -15,8 +15,8 @@
             <h1 class="text-3xl font-bold text-yellow-500 tracking-wider">GP 全权控制台</h1>
             <p class="text-sm text-gray-500 mt-2">已开启全局心跳监听：自动同步前台动态，实时指挥</p>
         </div>
-        <div class="flex items-center">
-            <span class="relative flex h-3 w-3 mr-2">
+        <div class="flex items-center space-x-3">
+            <span class="relative flex h-3 w-3">
               <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
             </span>
@@ -122,6 +122,40 @@
                 </div>
             </div>
 
+            <div class="bg-gray-900 p-6 rounded-lg border border-cyan-700/50 shadow-lg">
+                <h2 class="font-bold text-cyan-400 mb-2">📨 微信通知发送日志</h2>
+                <div class="flex items-center justify-between mb-3 gap-3">
+                    <p class="text-xs text-gray-500">最近发送结果（成功/失败）</p>
+                    <label class="text-xs text-red-300 flex items-center gap-2 cursor-pointer select-none">
+                        <input type="checkbox" v-model="onlyFailedLogs" class="accent-red-500">
+                        只看失败
+                    </label>
+                </div>
+                <div v-if="notificationLogs.length === 0" class="text-xs text-gray-600 border border-dashed border-gray-700 rounded p-3 text-center">
+                    暂无通知日志
+                </div>
+                <div v-else class="space-y-2 max-h-52 overflow-y-auto pr-1">
+                    <div v-for="log in notificationLogs" :key="log.id" class="bg-black p-2 rounded border border-gray-800">
+                        <div class="flex items-center justify-between gap-2">
+                            <p class="text-xs text-gray-300 truncate" :title="log.title">{{ log.title }}</p>
+                            <div class="flex items-center gap-2">
+                                <button v-if="log.status === 'FAILED'" @click="retryNotification(log)"
+                                        class="text-[10px] px-2 py-0.5 rounded border border-red-700/60 text-red-300 hover:bg-red-900/40 transition"
+                                        :disabled="retryingLogId === log.id">
+                                    {{ retryingLogId === log.id ? '重发中...' : '重发' }}
+                                </button>
+                                <span class="text-[10px] px-2 py-0.5 rounded border"
+                                      :class="log.status === 'SUCCESS' ? 'text-emerald-400 border-emerald-700/60' : 'text-red-400 border-red-700/60'">
+                                    {{ log.status }}
+                                </span>
+                            </div>
+                        </div>
+                        <p class="text-[10px] text-gray-500 mt-1">{{ log.created_at }}</p>
+                        <p v-if="log.response_msg" class="text-[10px] text-gray-400 mt-1 truncate" :title="log.response_msg">{{ log.response_msg }}</p>
+                    </div>
+                </div>
+            </div>
+
             <div class="bg-purple-900/20 p-6 rounded-lg border border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.15)] relative overflow-hidden">
                 <div class="absolute top-0 right-0 bg-purple-600 text-xs font-bold px-2 py-1 rounded-bl text-white tracking-widest">GOD MODE</div>
                 <h2 class="font-bold text-purple-400 mb-2">上帝模式：资金池强控</h2>
@@ -182,7 +216,7 @@
 </div>
 
 <script>
-    const { createApp, ref, onMounted, onUnmounted } = Vue
+    const { createApp, ref, onMounted, onUnmounted, watch } = Vue
     createApp({
         setup() {
             const API_BASE = '/api/v1';
@@ -192,6 +226,9 @@
             const allocations = ref([]); 
             const quarterlyInfo = ref({}); 
             const notices = ref([]); 
+            const notificationLogs = ref([]);
+            const onlyFailedLogs = ref(false);
+            const retryingLogId = ref(null);
             
             const injectForm = ref({ tx_type: 'PRINCIPAL', amount: '', description: '' });
             const allocForm = ref({ asset: '', amount: '' }); 
@@ -316,9 +353,30 @@
                     allocations.value = dashData.allocations || [];
                     quarterlyInfo.value = dashData.quarterly_info; 
                     notices.value = await fetchJsonWithRetry(`${API_BASE}/lp/notices?t=${t}`); 
+                    const sf = onlyFailedLogs.value ? 'FAILED' : 'ALL';
+                    notificationLogs.value = await fetchJsonWithRetry(`${API_BASE}/gp/notification_logs?limit=30&status_filter=${sf}&t=${t}`);
                 } catch(e) { ok = false; console.log("拉取更新失败"); }
                 finally { fetchingAdmin = false; }
                 return ok;
+            };
+
+            const retryNotification = async (log) => {
+                if (!log || !log.id) return;
+                retryingLogId.value = log.id;
+                try {
+                    const res = await fetch(`${API_BASE}/gp/notification_logs/${log.id}/retry`, { method: 'POST' });
+                    const data = await res.json();
+                    if (data.status === 'success') {
+                        alert('通知重发成功');
+                    } else {
+                        alert(data.message || '通知重发失败');
+                    }
+                } catch (e) {
+                    alert('通知重发失败，请稍后再试');
+                } finally {
+                    retryingLogId.value = null;
+                    fetchData();
+                }
             };
 
             const runPolling = async () => {
@@ -411,6 +469,18 @@
                 const res = await fetch(`${API_BASE}/gp/toggle_quarterly`, { method: 'POST' }); alert((await res.json()).message); fetchData();
             };
 
+            const initiateCall = () => {
+                const callId = `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                const callUrl = `/video_call?call_id=${callId}&user_type=gp`;
+                
+                // 弹出提示，告诉用户分享链接给乙方
+                const lpLink = window.location.origin + callUrl.replace('user_type=gp', 'user_type=lp');
+                alert(`通话链接已生成！请通过以下方式通知乙方接听：\n\n${lpLink}\n\n或者告诉乙方使用以下链接：/video_call?call_id=${callId}&user_type=lp`);
+                
+                // 打开本地通话页面
+                window.open(callUrl, '_blank', 'width=1280,height=720');
+            };
+
             const replyMsg = async (msg) => {
                 if (!msg.draftReply) return;
                 const fd = new FormData(); fd.append('reply', msg.draftReply);
@@ -440,12 +510,16 @@
                 document.addEventListener('visibilitychange', restartPolling);
             });
 
+            watch(onlyFailedLogs, () => {
+                fetchData();
+            });
+
             onUnmounted(() => {
                 if (pollTimer) clearInterval(pollTimer);
                 document.removeEventListener('visibilitychange', restartPolling);
                 if (recoveredBannerTimer) clearTimeout(recoveredBannerTimer);
             });
-            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, replyMsg, isImageFileAdmin, isVideoFileAdmin, openMediaModalAdmin, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown }
+            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, notificationLogs, onlyFailedLogs, retryingLogId, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, retryNotification, replyMsg, isImageFileAdmin, isVideoFileAdmin, openMediaModalAdmin, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown }
         }
     }).mount('#admin-app')
 </script>

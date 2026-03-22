@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, Form, status
+from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, Form, status, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -12,6 +12,7 @@ import os
 import shutil
 import secrets
 import requests
+import json
 from sqlalchemy.exc import SQLAlchemyError
 
 # ==========================================
@@ -85,6 +86,16 @@ class DBNotice(Base):
     publish_time = Column(DateTime, default=datetime.now)
     content = Column(String, nullable=False)
 
+class DBNotificationLog(Base):
+    __tablename__ = "notification_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    channel = Column(String, nullable=False, default="pushplus")
+    title = Column(String, nullable=False)
+    content = Column(String, nullable=False)
+    status = Column(String, nullable=False)  # SUCCESS / FAILED
+    response_msg = Column(String, nullable=True)
+
 Base.metadata.create_all(bind=engine)
 
 # ==========================================
@@ -120,20 +131,13 @@ app = FastAPI(title="家庭高净值资产控制台")
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
-security = HTTPBasic()
-def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
-    correct_username = secrets.compare_digest(credentials.username.encode("utf8"), b"gp") 
-    correct_password = secrets.compare_digest(credentials.password.encode("utf8"), b"gp123")
-    if not (correct_username and correct_password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="权限不足", headers={"WWW-Authenticate": "Basic"})
-    return credentials.username
-
-@app.get("/")
-def serve_lp_dashboard(): return FileResponse("dashboard.html")
-@app.get("/admin")
-def serve_gp_admin(username: str = Depends(get_current_username)): return FileResponse("admin.html")
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+# ==========================================
+# 导入通话管理模块
+# ==========================================
+from video_call_api import call_manager, setup_video_call_routes
 
 def get_db():
     db = SessionLocal()
@@ -143,18 +147,60 @@ def get_db():
 # ==========================================
 # 2. 核心算法与引擎
 # ==========================================
-def notify_gp_wechat(title, content):
-    url = "http://www.pushplus.plus/send"
+def log_notification_event(title: str, content: str, status: str, response_msg: str = ""):
+    """统一记录微信通知发送结果。"""
+    db = SessionLocal()
+    try:
+        db.add(DBNotificationLog(
+            channel="pushplus",
+            title=title,
+            content=content,
+            status=status,
+            response_msg=response_msg[:1000] if response_msg else None
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"通知日志写入失败: {e}")
+    finally:
+        db.close()
+
+def notify_gp_wechat(title: str, content: str):
+    """通过 PushPlus 发送微信通知。"""
+    url = "https://www.pushplus.plus/send"
+    token = os.environ.get("PUSHPLUS_TOKEN", "e92ace8deade436093a43798c81ecddc")
+
+    if not token:
+        print("微信通知发送失败: 未配置 PUSHPLUS_TOKEN")
+        log_notification_event(title, content, "FAILED", "未配置 PUSHPLUS_TOKEN")
+        return False
+
     data = {
-        "token": "e92ace8deade436093a43798c81ecddc",
+        "token": token,
         "title": title,
-        "content": content
+        "content": content,
+        "template": "txt"
     }
+
     try:
         # 给微信发信号，超时时间设为 2 秒，防止卡顿
-        requests.post(url, json=data, timeout=2)
+        resp = requests.post(url, json=data, timeout=2)
+        resp.raise_for_status()
+        payload = resp.json()
+        if payload.get("code") != 200:
+            msg = payload.get('msg', 'unknown error')
+            print(f"微信通知发送失败: {msg}")
+            log_notification_event(title, content, "FAILED", msg)
+            return False
+        log_notification_event(title, content, "SUCCESS", payload.get("msg", "ok"))
+        return True
     except Exception as e:
         print(f"微信通知发送失败: {e}")
+        log_notification_event(title, content, "FAILED", str(e))
+        return False
+
+# 注册视频通话路由（绑定真实微信通知实现）
+setup_video_call_routes(app, notify_gp_wechat)
 
 def get_dynamic_monthly_limit():
     BASE_LIMIT = 100.0
@@ -491,6 +537,34 @@ def gp_get_pending_requests(db: Session = Depends(get_db)):
         "status": r.status
     } for r in requests]
 
+@app.get("/api/v1/gp/notification_logs")
+def gp_get_notification_logs(limit: int = 30, status_filter: str = "ALL", db: Session = Depends(get_db)):
+    safe_limit = max(1, min(limit, 100))
+    query = db.query(DBNotificationLog)
+    sf = (status_filter or "ALL").upper()
+    if sf in ["SUCCESS", "FAILED"]:
+        query = query.filter(DBNotificationLog.status == sf)
+    logs = query.order_by(desc(DBNotificationLog.id)).limit(safe_limit).all()
+    return [{
+        "id": item.id,
+        "created_at": item.created_at.strftime("%Y-%m-%d %H:%M:%S") if item.created_at else None,
+        "channel": item.channel,
+        "title": item.title,
+        "status": item.status,
+        "response_msg": item.response_msg,
+    } for item in logs]
+
+@app.post("/api/v1/gp/notification_logs/{log_id}/retry")
+def gp_retry_notification(log_id: int, db: Session = Depends(get_db)):
+    item = db.query(DBNotificationLog).filter(DBNotificationLog.id == log_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="通知日志不存在")
+
+    ok = notify_gp_wechat(item.title, item.content)
+    if ok:
+        return {"status": "success", "message": "重发成功"}
+    return {"status": "error", "message": "重发失败，请查看最新日志"}
+
 @app.post("/api/v1/gp/process_request/{req_id}")
 def gp_process_request(req_id: int, action: str, final_amount: float = 0.0, reject_reason: str = "", db: Session = Depends(get_db)):
     req = db.query(DBRequest).filter(DBRequest.id == req_id).first()
@@ -519,3 +593,21 @@ def gp_update_allocation(asset_name: str = Form(...), amount: float = Form(...),
     else: db.add(DBAssetAllocation(asset_name=asset_name, allocated_amount=amount))
     db.commit()
     return {"status": "success", "message": f"资产配置已更新: {asset_name} -> ¥{amount}"}
+
+
+# ==========================================
+# 4. 页面路由
+# ==========================================
+@app.get("/", include_in_schema=False)
+def index_page():
+    return FileResponse(os.path.join(BASE_DIR, "dashboard.html"))
+
+
+@app.get("/admin", include_in_schema=False)
+def admin_page():
+    return FileResponse(os.path.join(BASE_DIR, "admin.html"))
+
+
+@app.get("/video_call", include_in_schema=False)
+def video_call_page():
+    return FileResponse(os.path.join(BASE_DIR, "video_call.html"))
