@@ -102,13 +102,40 @@
     let micEnabled = true;
     let cameraEnabled = true;
     let statsInterval = null;
+    let hasSentOffer = false;
+    let offerRetryTimer = null;
 
-    // STUN 服务器配置
+    // STUN & TURN 服务器配置（支持复杂网络下的穿透）
     const iceServers = [
+        // STUN 服务器列表
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' }
+        { urls: 'stun:stun2.l.google.com:19302' },
+        // TURN 中继服务器列表（用于解决复杂网络下的卡顿/断流）
+        { 
+            urls: ['turn:numb.viagenie.ca:3478'],
+            username: 'webrtc@live.com',
+            credential: 'webrtc'
+        },
+        { 
+            urls: ['turn:turn.bistri.com:80'],
+            username: 'webrtc',
+            credential: 'webrtc'
+        },
+        { 
+            urls: ['turn:turn.anyfirewall.com:443?transport=tcp'],
+            username: 'webrtc',
+            credential: 'webrtc'
+        }
     ];
+
+    // 稳定优先的媒体配置（360p）
+    const VIDEO_CONSTRAINTS = {
+        width: { ideal: 640, max: 640 },
+        height: { ideal: 360, max: 360 },
+        frameRate: { ideal: 15, max: 20 },
+        facingMode: 'user'
+    };
 
     // 初始化
     async function init() {
@@ -133,16 +160,11 @@
             
             // 3. 创建 WebRTC 连接
             initPeerConnection();
-            
-            // 4. 如果是发起方（LP），创建 offer
+
+            // 4. 发送就绪信号，LP 等待 GP ready 后再发 offer，避免时序丢信令
+            websocket.send(JSON.stringify({ type: 'ready', data: { user_type: userType } }));
             if (userType === 'lp') {
                 updateStatus('等待对方接听...', false);
-                const offer = await peerConnection.createOffer({
-                    offerToReceiveAudio: true,
-                    offerToReceiveVideo: true
-                });
-                await peerConnection.setLocalDescription(offer);
-                websocket.send(JSON.stringify({ type: 'offer', data: offer }));
             }
 
             updateStatus('通话已连接，等待对方回应...', false);
@@ -158,11 +180,7 @@
         try {
             localStream = await navigator.mediaDevices.getUserMedia({
                 audio: { echoCancellation: true, noiseSuppression: true },
-                video: {
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                    facingMode: 'user'
-                }
+                video: VIDEO_CONSTRAINTS
             });
             localVideo.srcObject = localStream;
             updateStatus('摄像头和麦克风已就绪', false);
@@ -212,10 +230,14 @@
             peerConnection.addTrack(track, localStream);
         });
 
+        // 对发送参数做保守限流，优先流畅和稳定
+        tuneSenderParameters();
+
         // 处理远程媒体流
         peerConnection.ontrack = (event) => {
             console.log('✅ 收到远程媒体流');
             remoteVideo.srcObject = event.streams[0];
+            remoteVideo.play?.().catch(() => {});
             updateStatus('对方已接入，通话进行中...', false);
         };
 
@@ -234,6 +256,10 @@
             if (peerConnection.connectionState === 'failed') {
                 updateStatus('连接失败，请检查网络', true);
             }
+
+            if (peerConnection.connectionState === 'connected') {
+                clearTimeout(offerRetryTimer);
+            }
         };
 
         peerConnection.oniceconnectionstatechange = () => {
@@ -241,9 +267,111 @@
         };
     }
 
+    function tuneSenderParameters() {
+        const senders = peerConnection.getSenders ? peerConnection.getSenders() : [];
+        senders.forEach((sender) => {
+            if (!sender.track || !sender.getParameters || !sender.setParameters) return;
+            const params = sender.getParameters() || {};
+            if (!params.encodings || params.encodings.length === 0) {
+                params.encodings = [{}];
+            }
+
+            if (sender.track.kind === 'video') {
+                // 360p 场景初始码率 500kbps，支持动态自适应
+                params.encodings[0].maxBitrate = 500 * 1000; // 500 kbps 初始值
+                params.encodings[0].maxFramerate = 15;
+                params.degradationPreference = 'maintain-framerate';
+            } else if (sender.track.kind === 'audio') {
+                params.encodings[0].maxBitrate = 64 * 1000; // 64 kbps
+            }
+
+            sender.setParameters(params).catch((e) => {
+                console.warn('发送参数调优失败:', e);
+            });
+        });
+    }
+
+    // 动态自适应码率：根据丢包率自动调整视频码率
+    let videoBitrate = 500 * 1000; // 当前码率（初始 500kbps）
+    let lastPacketsLost = 0;
+    let lastReportTime = Date.now();
+
+    async function adaptiveBitrateControl() {
+        if (!peerConnection) return;
+        
+        try {
+            const stats = await peerConnection.getStats();
+            let packetsLost = 0;
+            let packetsSent = 0;
+            let currentReportTime = Date.now();
+
+            stats.forEach(report => {
+                // 监控发送端的丢包情况
+                if (report.type === 'outbound-rtp' && report.mediaType === 'video') {
+                    packetsLost = report.packetsLost || 0;
+                    packetsSent = report.packetsSent || 0;
+                }
+            });
+
+            // 计算丢包率
+            const lostDelta = packetsLost - lastPacketsLost;
+            const timeDelta = (currentReportTime - lastReportTime) / 1000; // 秒
+            const packetLossRate = packetsSent > 0 ? (lostDelta / packetsSent) : 0;
+
+            console.log(`📊 丢包率: ${(packetLossRate * 100).toFixed(2)}%, 当前码率: ${(videoBitrate / 1000).toFixed(0)}kbps`);
+
+            // 根据丢包率动态调整码率
+            const senders = peerConnection.getSenders ? peerConnection.getSenders() : [];
+            senders.forEach((sender) => {
+                if (!sender.track || sender.track.kind !== 'video') return;
+                
+                const params = sender.getParameters();
+                if (!params.encodings || params.encodings.length === 0) return;
+
+                if (packetLossRate > 0.08) {
+                    // 丢包率 > 8%：降低到 300kbps
+                    if (videoBitrate !== 300 * 1000) {
+                        videoBitrate = 300 * 1000;
+                        console.log('🔴 网络恶劣（丢包率高），降速至 300kbps');
+                    }
+                } else if (packetLossRate > 0.05) {
+                    // 丢包率 5-8%：降低到 400kbps
+                    if (videoBitrate !== 400 * 1000) {
+                        videoBitrate = 400 * 1000;
+                        console.log('🟡 网络一般（丢包率中），降速至 400kbps');
+                    }
+                } else if (packetLossRate < 0.02) {
+                    // 丢包率 < 2%：尝试恢复到 500kbps
+                    if (videoBitrate !== 500 * 1000) {
+                        videoBitrate = 500 * 1000;
+                        console.log('🟢 网络良好，恢复至 500kbps');
+                    }
+                }
+
+                params.encodings[0].maxBitrate = videoBitrate;
+                sender.setParameters(params).catch((e) => {
+                    console.warn('动态码率调整失败:', e);
+                });
+            });
+
+            lastPacketsLost = packetsLost;
+            lastReportTime = currentReportTime;
+        } catch (error) {
+            console.warn('自适应码率控制出错:', error);
+        }
+    }
+
     // 处理信号消息
     async function handleSignalingMessage(message) {
         try {
+            if (message.type === 'ready') {
+                // 只有 LP 负责发 offer，且仅发送一次
+                if (userType === 'lp' && !hasSentOffer) {
+                    await sendOffer();
+                }
+                return;
+            }
+
             if (message.type === 'offer') {
                 if (!peerConnection.currentLocalDescription) {
                     await peerConnection.setRemoteDescription(new RTCSessionDescription(message.data));
@@ -263,6 +391,34 @@
         } catch (error) {
             console.error('处理信号消息失败:', error);
         }
+    }
+
+    async function sendOffer() {
+        if (!peerConnection || hasSentOffer) return;
+        hasSentOffer = true;
+
+        const offer = await peerConnection.createOffer({
+            offerToReceiveAudio: true,
+            offerToReceiveVideo: true
+        });
+        await peerConnection.setLocalDescription(offer);
+        websocket.send(JSON.stringify({ type: 'offer', data: offer }));
+
+        // 若 8 秒后仍未连通，自动再发一次 offer 兜底
+        offerRetryTimer = setTimeout(async () => {
+            if (!peerConnection) return;
+            if (peerConnection.connectionState === 'connected') return;
+            try {
+                const retryOffer = await peerConnection.createOffer({
+                    offerToReceiveAudio: true,
+                    offerToReceiveVideo: true
+                });
+                await peerConnection.setLocalDescription(retryOffer);
+                websocket.send(JSON.stringify({ type: 'offer', data: retryOffer }));
+            } catch (e) {
+                console.warn('offer 重试失败:', e);
+            }
+        }, 8000);
     }
 
     // 麦克风控制
@@ -305,6 +461,7 @@
         
         // 停止统计
         clearInterval(statsInterval);
+        clearTimeout(offerRetryTimer);
         
         // 返回到原来的页面
         setTimeout(() => {
@@ -334,6 +491,9 @@
                 document.getElementById('latency').textContent = latency;
                 document.getElementById('resolution').textContent = resolution;
                 document.getElementById('frameRate').textContent = frameRate;
+
+                // 启用动态自适应码率控制（每秒检查丢包率并调整）
+                await adaptiveBitrateControl();
             } catch (error) {
                 console.warn('获取统计失败:', error);
             }

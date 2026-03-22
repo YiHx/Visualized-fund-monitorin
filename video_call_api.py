@@ -24,17 +24,18 @@ class CallManager:
         self.pending_requests = {}  # {"call_id": CallRequest}
         self.active_calls = {}      # {"call_id": {"lp": ws, "gp": ws}}
         self.user_to_call = {}      # 追踪用户当前通话
+        self.pending_signals = {}   # {"call_id": {"lp": [msg], "gp": [msg]}}
 
     def create_call_request(self, call_id: str, requestor: str) -> CallRequest:
         """创建通话请求"""
         request = CallRequest(call_id, requestor)
         self.pending_requests[call_id] = request
         
-        # 30秒后自动超时
+        # 60秒（1分钟）后自动超时
         def timeout_handler():
             asyncio.run(self.timeout_request(call_id))
         
-        timeout_thread = threading.Timer(30, timeout_handler)
+        timeout_thread = threading.Timer(60, timeout_handler)
         timeout_thread.daemon = True
         timeout_thread.start()
         request.timeout_task = timeout_thread
@@ -71,10 +72,20 @@ class CallManager:
         if user_type not in self.active_calls[call_id]:
             self.active_calls[call_id][user_type] = websocket
             self.user_to_call[id(websocket)] = call_id
-            
-            # 移除待处理请求
-            if call_id in self.pending_requests:
+
+            if call_id not in self.pending_signals:
+                self.pending_signals[call_id] = {"lp": [], "gp": []}
+
+            # 只有当双方都已进入通话后，才清理待处理请求，避免 GP 接听时被误判过期
+            if call_id in self.pending_requests and len(self.active_calls[call_id]) >= 2:
                 del self.pending_requests[call_id]
+
+            # 对端先发来的信令在这里补发，避免 offer/ice 因时序问题丢失
+            queued = self.pending_signals.get(call_id, {}).get(user_type, [])
+            if queued:
+                for msg in queued:
+                    await websocket.send_json(msg)
+                self.pending_signals[call_id][user_type] = []
             return True
         return False
 
@@ -87,7 +98,11 @@ class CallManager:
                 return True
             except:
                 return False
-        return False
+        # 对端尚未连接时暂存信令，等对端连接后补发
+        if call_id not in self.pending_signals:
+            self.pending_signals[call_id] = {"lp": [], "gp": []}
+        self.pending_signals[call_id][to_user].append(message)
+        return True
 
     async def close_call(self, websocket: WebSocket):
         """关闭通话"""
@@ -104,6 +119,8 @@ class CallManager:
                 # 如果通话完全断开，清理
                 if not self.active_calls[call_id]:
                     del self.active_calls[call_id]
+                    if call_id in self.pending_signals:
+                        del self.pending_signals[call_id]
             
             del self.user_to_call[ws_id]
 
@@ -141,7 +158,7 @@ def setup_video_call_routes(app, notify_gp_wechat):
         # 通过微信通知甲方
         base_url = resolve_public_base_url(request)
         call_url = f"{base_url}/video_call?call_id={call_id}&user_type=gp"
-        notify_gp_wechat("📞 乙方拨入来电", f"乙方发起音视频通话\n\n接听链接：{call_url}\n\n30秒内请接听，否则对方会看到'对方可能正在忙'")
+        notify_gp_wechat("📞 乙方拨入来电", f"乙方发起音视频通话\n\n接听链接：{call_url}\n\n1分钟内请接听，否则对方会看到'对方可能正在忙'")
         
         return {
             "status": "success",
