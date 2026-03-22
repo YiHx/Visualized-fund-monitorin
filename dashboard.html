@@ -189,20 +189,39 @@
         </div>
 
         <div class="border border-gray-700 rounded-lg p-6 bg-gray-900 shadow-inner">
-            <h3 class="text-lg text-yellow-500 font-bold mb-4 flex items-center">💬 留言板</h3>
-            <form @submit.prevent="submitMessage" class="mb-6 flex space-x-2">
-                <input v-model="msgInput" type="text" placeholder="对 GP 说点什么..." class="flex-1 bg-black border border-gray-700 rounded p-2 text-white text-sm" required>
-                <button type="submit" :disabled="isSubmitting" class="bg-yellow-700 text-white px-6 py-2 rounded text-sm font-bold disabled:opacity-50">
-                    {{ isSubmitting ? '发送中...' : '发送' }}
-                </button>
+            <h3 class="text-lg text-yellow-500 font-bold mb-4 flex items-center">💬 留言板（支持图片/视频）</h3>
+            <form @submit.prevent="submitMessage" class="mb-6 space-y-3">
+                <div>
+                    <textarea v-model="msgInput" placeholder="对 GP 说点什么..." class="w-full bg-black border border-gray-700 rounded p-2 text-white text-sm h-16 resize-none" required></textarea>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <input ref="msgFileInput" type="file" accept="image/*,video/*" class="hidden" @change="handleMessageFileSelect">
+                    <button type="button" @click="$refs.msgFileInput.click()" class="bg-blue-700 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-bold transition">
+                        📎 上传图片或视频
+                    </button>
+                    <span v-if="selectedMessageFile" class="text-xs text-emerald-400">{{ selectedMessageFile.name }}</span>
+                    <button type="submit" :disabled="isSubmitting" class="ml-auto bg-yellow-700 hover:bg-yellow-600 text-white px-6 py-2 rounded text-sm font-bold disabled:opacity-50 transition">
+                        {{ isSubmitting ? '发送中...' : '发送' }}
+                    </button>
+                </div>
             </form>
             
-            <div class="space-y-4 max-h-64 overflow-y-auto pr-2">
+            <div class="space-y-4 max-h-80 overflow-y-auto pr-2">
                     <div v-for="msg in messages" :key="msg.id" class="bg-black p-4 rounded border border-gray-800 text-sm transition relative">
                         <div class="text-gray-300">
-                            <div class="flex justify-between items-start">
-                                <div><span class="text-blue-400 font-bold">乙方:</span> {{ msg.content }}</div>
-                                <div class="text-xs text-gray-500 ml-4">{{ msg.created_date }}</div>
+                            <div class="flex justify-between items-start mb-2">
+                                <span class="text-blue-400 font-bold">乙方</span>
+                                <div class="text-xs text-gray-500">{{ msg.created_date }}</div>
+                            </div>
+                            <p>{{ msg.content }}</p>
+                            
+                            <!-- 媒体预览 -->
+                            <div v-if="msg.attachment_url" class="mt-3 rounded overflow-hidden bg-gray-900 max-w-xs">
+                                <img v-if="isImageFile(msg.attachment_url)" :src="'/' + msg.attachment_url" :alt="msg.content" class="w-full h-auto cursor-pointer hover:opacity-80" @click="openMediaModal(msg.attachment_url)">
+                                <video v-else-if="isVideoFile(msg.attachment_url)" controls class="w-full h-auto bg-black" :style="{ maxHeight: '300px' }">
+                                    <source :src="'/' + msg.attachment_url">
+                                    您的浏览器不支持视频播放
+                                </video>
                             </div>
                         </div>
 
@@ -239,6 +258,8 @@
             const alphaForm = ref({ reason: '' });
             const fileInput = ref(null);
             const msgInput = ref('');
+            const msgFileInput = ref(null);
+            const selectedMessageFile = ref(null);
             
             const messages = ref([]);
             const myRequests = ref([]);
@@ -437,15 +458,53 @@
             const submitMessage = async () => {
                 isSubmitting.value = true;
                 try {
-                    const fd = new FormData(); fd.append('content', msgInput.value);
+                    const fd = new FormData();
+                    fd.append('content', msgInput.value);
+                    if (selectedMessageFile.value) {
+                        fd.append('file', selectedMessageFile.value);
+                    }
                     const res = await fetch(`${API_BASE}/lp/messages`, { method: 'POST', body: fd });
                     if (!res.ok) {
                         const err = await res.json().catch(() => ({ detail: '留言提交失败，请稍后重试。' }));
                         alert(err.detail || '留言提交失败，请稍后重试。');
                         return;
                     }
-                    msgInput.value = ''; fetchPrivateData();
+                    msgInput.value = '';
+                    selectedMessageFile.value = null;
+                    if (msgFileInput.value) msgFileInput.value.value = '';
+                    fetchPrivateData();
                 } finally { isSubmitting.value = false; }
+            };
+
+            const handleMessageFileSelect = () => {
+                const file = msgFileInput.value?.files?.[0];
+                if (file) {
+                    const maxSize = file.type.startsWith('video/') ? 50 * 1024 * 1024 : 10 * 1024 * 1024;
+                    if (file.size > maxSize) {
+                        const label = file.type.startsWith('video/') ? '视频' : '图片';
+                        const maxMB = file.type.startsWith('video/') ? 50 : 10;
+                        alert(`${label}太大（最多${maxMB}MB）！`);
+                        msgFileInput.value.value = '';
+                        return;
+                    }
+                    selectedMessageFile.value = file;
+                }
+            };
+
+            const isImageFile = (url) => /\.(jpg|jpeg|png|gif|webp)$/i.test(url);
+            const isVideoFile = (url) => /\.(mp4|webm|mov)$/i.test(url);
+
+            const openMediaModal = (url) => {
+                const modal = document.createElement('div');
+                modal.innerHTML = `
+                    <div class="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4" style="backdrop-filter: blur(5px);">
+                        <div class="relative max-w-4xl max-h-screen">
+                            <img src="/${url}" alt="media" class="max-w-full max-h-screen rounded">
+                            <button onclick="this.closest('div').remove()" class="absolute top-3 right-3 bg-red-600 hover:bg-red-700 text-white w-10 h-10 rounded-full font-bold text-xl transition">✕</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
             };
 
             const submitWithdrawal = async () => {
@@ -496,8 +555,8 @@
             return { 
                 navData, allocations, allocationMeta, limitStatus, quarterlyInfo, notices,
                 isAuthenticated, showAuthModal, pinInput, verifyPin, closeAuthModal, logout,
-                form, alphaForm, fileInput, msgInput, messages, myRequests,
-                submitWithdrawal, submitAlpha, claimQuarterly, submitMessage,
+                form, alphaForm, fileInput, msgInput, msgFileInput, selectedMessageFile, messages, myRequests,
+                submitWithdrawal, submitAlpha, claimQuarterly, submitMessage, handleMessageFileSelect, isImageFile, isVideoFile, openMediaModal,
                 isUploading, isSubmitting,
                 showNoticeModal, closeNoticeModal,
                 consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown

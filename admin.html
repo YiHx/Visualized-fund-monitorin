@@ -78,9 +78,19 @@
 
             <div class="bg-gray-900 p-6 rounded-lg border border-blue-900/50 shadow-lg">
                 <h2 class="text-lg font-bold text-blue-400 mb-4">💬 乙方留言板与回复池 (实时)</h2>
-                <div class="space-y-4 max-h-80 overflow-y-auto pr-2">
+                <div class="space-y-4 max-h-96 overflow-y-auto pr-2">
                     <div v-for="msg in messages" :key="msg.id" class="bg-black p-4 rounded border border-gray-700 transition">
                         <div class="mb-2"><span class="text-gray-500 text-xs">{{ msg.created_date }}</span><p class="text-gray-200 mt-1"><span class="font-bold text-yellow-500">乙方：</span>{{ msg.content }}</p></div>
+                        
+                        <!-- 媒体预览 -->
+                        <div v-if="msg.attachment_url" class="mt-3 rounded overflow-hidden bg-gray-900 max-w-sm">
+                            <img v-if="isImageFileAdmin(msg.attachment_url)" :src="'/' + msg.attachment_url" :alt="msg.content" class="w-full h-auto cursor-pointer hover:opacity-80" @click="openMediaModalAdmin(msg.attachment_url)">
+                            <video v-else-if="isVideoFileAdmin(msg.attachment_url)" controls class="w-full h-auto bg-black" :style="{ maxHeight: '250px' }">
+                                <source :src="'/' + msg.attachment_url">
+                                您的浏览器不支持视频播放
+                            </video>
+                        </div>
+                        
                         <div v-if="msg.reply" class="pl-4 border-l-2 border-emerald-600 mt-3 bg-gray-900 py-2"><p class="text-emerald-400 text-sm">已回复：{{ msg.reply }}</p></div>
                         <div v-else class="mt-4 flex space-x-2">
                             <input v-model="msg.draftReply" type="text" class="flex-1 bg-gray-900 border border-gray-600 rounded p-2 text-sm text-white" placeholder="批示...">
@@ -408,6 +418,22 @@
                 if(res.ok) { alert("回复已发送给乙方。"); fetchData(); }
             };
 
+            const isImageFileAdmin = (url) => /\.(jpg|jpeg|png|gif|webp)$/i.test(url);
+            const isVideoFileAdmin = (url) => /\.(mp4|webm|mov)$/i.test(url);
+
+            const openMediaModalAdmin = (url) => {
+                const modal = document.createElement('div');
+                modal.innerHTML = `
+                    <div class="fixed inset-0 bg-black/90 flex items-center justify-center z-[100] p-4" style="backdrop-filter: blur(5px);">
+                        <div class="relative max-w-4xl max-h-screen">
+                            <img src="/${url}" alt="media" class="max-w-full max-h-screen rounded">
+                            <button onclick="this.closest('div').remove()" class="absolute top-3 right-3 bg-red-600 hover:bg-red-700 text-white w-10 h-10 rounded-full font-bold text-xl transition">✕</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            };
+
             onMounted(() => { 
                 runPolling(); 
                 restartPolling();
@@ -419,7 +445,7 @@
                 document.removeEventListener('visibilitychange', restartPolling);
                 if (recoveredBannerTimer) clearTimeout(recoveredBannerTimer);
             });
-            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, replyMsg, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown }
+            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, replyMsg, isImageFileAdmin, isVideoFileAdmin, openMediaModalAdmin, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown }
         }
     }).mount('#admin-app')
 </script>

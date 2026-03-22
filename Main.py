@@ -19,8 +19,16 @@ from sqlalchemy.exc import SQLAlchemyError
 # ==========================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
+MESSAGES_UPLOAD_DIR = os.path.join(UPLOAD_DIR, "messages")
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
+if not os.path.exists(MESSAGES_UPLOAD_DIR):
+    os.makedirs(MESSAGES_UPLOAD_DIR)
+
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+ALLOWED_VIDEO_TYPES = {"video/mp4", "video/webm", "video/quicktime"}
+MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_VIDEO_SIZE = 50 * 1024 * 1024  # 50MB
 
 DB_PATH = os.path.join(BASE_DIR, "family_fund.db")
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH}"
@@ -60,6 +68,7 @@ class DBMessage(Base):
     id = Column(Integer, primary_key=True, index=True)
     created_date = Column(DateTime, nullable=False, default=datetime.now)
     content = Column(String, nullable=False)
+    attachment_url = Column(String, nullable=True)
     reply = Column(String, nullable=True)
     reply_time = Column(DateTime, nullable=True)
 
@@ -282,6 +291,7 @@ def get_messages(db: Session = Depends(get_db)):
         out.append({
             "id": m.id,
             "content": m.content,
+            "attachment_url": m.attachment_url,
             "created_date": m.created_date.strftime("%Y-%m-%d %H:%M") if m.created_date else None,
             "reply": m.reply,
             "reply_time": m.reply_time.strftime("%Y-%m-%d %H:%M") if m.reply_time else None
@@ -289,14 +299,44 @@ def get_messages(db: Session = Depends(get_db)):
     return out
 
 @app.post("/api/v1/lp/messages")
-def post_message(content: str = Form(...), db: Session = Depends(get_db)):
+async def post_message(content: str = Form(...), file: UploadFile = File(None), db: Session = Depends(get_db)):
+    attachment_url = None
+    
+    # 如果提供了文件，进行处理
+    if file and file.filename:
+        file_content = await file.read()
+        
+        # 获取MIME类型
+        mime_type = file.content_type or ""
+        
+        # 验证文件类型和大小
+        if mime_type in ALLOWED_IMAGE_TYPES:
+            if len(file_content) > MAX_IMAGE_SIZE:
+                raise HTTPException(status_code=400, detail="图片文件过大（最多10MB）。")
+        elif mime_type in ALLOWED_VIDEO_TYPES:
+            if len(file_content) > MAX_VIDEO_SIZE:
+                raise HTTPException(status_code=400, detail="视频文件过大（最多50MB）。")
+        else:
+            raise HTTPException(status_code=400, detail=f"不支持的文件类型。仅支持 JPG/PNG/GIF/WebP 或 MP4/WebM/MOV。")
+        
+        # 生成安全的文件名
+        file_ext = os.path.splitext(file.filename)[1].lower()
+        safe_name = f"{secrets.token_hex(16)}{file_ext}"
+        save_path = os.path.join(MESSAGES_UPLOAD_DIR, safe_name)
+        
+        with open(save_path, "wb") as f:
+            f.write(file_content)
+        
+        attachment_url = f"uploads/messages/{safe_name}"
+    
     try:
-        db.add(DBMessage(content=content))
+        db.add(DBMessage(content=content, attachment_url=attachment_url))
         db.commit()
     except SQLAlchemyError:
         db.rollback()
         raise HTTPException(status_code=500, detail="留言写入失败，请检查服务器数据库写权限。")
-    notify_gp_wechat("💬 家庭办公室新留言", f"乙方有话对你说：\n{content}") # 👉 新加的这行
+    
+    notify_gp_wechat("💬 家庭办公室新留言", f"乙方有话对你说：\n{content}")
     return {"status": "success"}
 
 @app.get("/api/v1/lp/limit_status")
