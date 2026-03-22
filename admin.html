@@ -24,6 +24,14 @@
         </div>
     </header>
 
+    <div v-if="showNetWarning" class="bg-red-900/40 border border-red-600 text-red-200 text-sm px-4 py-3 rounded flex items-center justify-between gap-3">
+        <span>网络波动，正在自动恢复（连续失败 {{ consecutiveFailures }} 次）。</span>
+        <button @click="manualRetry" class="bg-red-700 hover:bg-red-600 text-white text-xs font-bold px-3 py-1 rounded border border-red-500 transition">立即重试</button>
+    </div>
+    <div v-else-if="showRecovered" class="bg-emerald-900/40 border border-emerald-600 text-emerald-200 text-sm px-4 py-3 rounded">
+        网络已恢复，数据同步正常。
+    </div>
+
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         <div class="lg:col-span-2 space-y-6">
@@ -183,8 +191,16 @@
             const POLL_VISIBLE_MS = 4000;
             const POLL_HIDDEN_MS = 15000;
             const FETCH_TIMEOUT_MS = 8000;
+            const RETRY_MAX_ATTEMPTS = 3;
+            const RETRY_BASE_DELAY_MS = 400;
+            const FAILURE_THRESHOLD = 3;
             let pollTimer = null;
             let fetchingAdmin = false;
+            let recoveredBannerTimer = null;
+
+            const consecutiveFailures = ref(0);
+            const showNetWarning = ref(false);
+            const showRecovered = ref(false);
 
             const fetchJsonWithTimeout = async (url, options = {}) => {
                 const controller = new AbortController();
@@ -192,7 +208,9 @@
                 try {
                     const res = await fetch(url, { ...options, signal: controller.signal, cache: 'no-store' });
                     if (!res.ok) {
-                        throw new Error(`HTTP ${res.status}`);
+                        const err = new Error(`HTTP ${res.status}`);
+                        err.status = res.status;
+                        throw err;
                     }
                     return await res.json();
                 } finally {
@@ -200,14 +218,67 @@
                 }
             };
 
+            const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+            const isRetryableError = (err) => {
+                if (!err) return false;
+                if (err.name === 'AbortError') return true;
+                if (typeof err.status === 'number') return err.status >= 500;
+                return true;
+            };
+
+            const fetchJsonWithRetry = async (url, options = {}) => {
+                let lastError = null;
+                for (let attempt = 1; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
+                    try {
+                        return await fetchJsonWithTimeout(url, options);
+                    } catch (err) {
+                        lastError = err;
+                        if (!isRetryableError(err) || attempt === RETRY_MAX_ATTEMPTS) {
+                            break;
+                        }
+                        const backoff = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+                        const jitter = Math.floor(Math.random() * 120);
+                        await sleep(backoff + jitter);
+                    }
+                }
+                throw lastError;
+            };
+
+            const markSyncFailure = () => {
+                consecutiveFailures.value += 1;
+                if (consecutiveFailures.value >= FAILURE_THRESHOLD) {
+                    showNetWarning.value = true;
+                    showRecovered.value = false;
+                }
+                if (recoveredBannerTimer) {
+                    clearTimeout(recoveredBannerTimer);
+                    recoveredBannerTimer = null;
+                }
+            };
+
+            const markSyncSuccess = () => {
+                const hadWarning = showNetWarning.value;
+                consecutiveFailures.value = 0;
+                showNetWarning.value = false;
+                if (hadWarning) {
+                    showRecovered.value = true;
+                    if (recoveredBannerTimer) clearTimeout(recoveredBannerTimer);
+                    recoveredBannerTimer = setTimeout(() => {
+                        showRecovered.value = false;
+                    }, 4000);
+                }
+            };
+
             // 👉 核心修改：在抓取新数据时，把旧数据框里还没提交的打字草稿提取出来，合并进去！
             const fetchData = async () => {
-                if (fetchingAdmin) return;
+                if (fetchingAdmin) return true;
                 fetchingAdmin = true;
+                let ok = true;
                 const t = new Date().getTime(); 
                 try {
                     // 1. 抓取审批工单（保护打字草稿）
-                    const newRequests = await fetchJsonWithTimeout(`${API_BASE}/gp/pending_requests?t=${t}`);
+                    const newRequests = await fetchJsonWithRetry(`${API_BASE}/gp/pending_requests?t=${t}`);
                     pendingRequests.value = newRequests.map(newReq => {
                         const oldReq = pendingRequests.value.find(r => r.id === newReq.id);
                         if (oldReq) {
@@ -218,7 +289,7 @@
                     });
 
                     // 2. 抓取留言列表（保护回复草稿）
-                    const newMessages = await fetchJsonWithTimeout(`${API_BASE}/messages?t=${t}`);
+                    const newMessages = await fetchJsonWithRetry(`${API_BASE}/messages?t=${t}`);
                     messages.value = newMessages.map(newMsg => {
                         const oldMsg = messages.value.find(m => m.id === newMsg.id);
                         if (oldMsg) {
@@ -228,19 +299,31 @@
                     });
 
                     // 3. 其他纯展示数据，直接刷新
-                    const dashData = await fetchJsonWithTimeout(`${API_BASE}/dashboard?t=${t}`);
+                    const dashData = await fetchJsonWithRetry(`${API_BASE}/dashboard?t=${t}`);
                     ledger.value = dashData.ledger;
                     allocations.value = dashData.allocations || [];
                     quarterlyInfo.value = dashData.quarterly_info; 
-                    notices.value = await fetchJsonWithTimeout(`${API_BASE}/lp/notices?t=${t}`); 
-                } catch(e) { console.log("拉取更新失败"); }
+                    notices.value = await fetchJsonWithRetry(`${API_BASE}/lp/notices?t=${t}`); 
+                } catch(e) { ok = false; console.log("拉取更新失败"); }
                 finally { fetchingAdmin = false; }
+                return ok;
+            };
+
+            const runPolling = async () => {
+                const ok = await fetchData();
+                if (ok) markSyncSuccess();
+                else markSyncFailure();
             };
 
             const restartPolling = () => {
                 if (pollTimer) clearInterval(pollTimer);
                 const interval = document.hidden ? POLL_HIDDEN_MS : POLL_VISIBLE_MS;
-                pollTimer = setInterval(fetchData, interval);
+                pollTimer = setInterval(runPolling, interval);
+            };
+
+            const manualRetry = async () => {
+                await runPolling();
+                restartPolling();
             };
 
             const processRequest = async (req, isReject) => {
@@ -314,7 +397,7 @@
             };
 
             onMounted(() => { 
-                fetchData(); 
+                runPolling(); 
                 restartPolling();
                 document.addEventListener('visibilitychange', restartPolling);
             });
@@ -322,8 +405,9 @@
             onUnmounted(() => {
                 if (pollTimer) clearInterval(pollTimer);
                 document.removeEventListener('visibilitychange', restartPolling);
+                if (recoveredBannerTimer) clearTimeout(recoveredBannerTimer);
             });
-            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, replyMsg }
+            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, replyMsg, consecutiveFailures, showNetWarning, showRecovered, manualRetry }
         }
     }).mount('#admin-app')
 </script>

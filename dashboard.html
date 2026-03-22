@@ -53,6 +53,14 @@
         </div>
     </header>
 
+    <div v-if="showNetWarning" class="bg-red-900/40 border border-red-600 text-red-200 text-sm px-4 py-3 rounded flex items-center justify-between gap-3">
+        <span>网络波动，正在自动恢复（连续失败 {{ consecutiveFailures }} 次）。</span>
+        <button @click="manualRetry" class="bg-red-700 hover:bg-red-600 text-white text-xs font-bold px-3 py-1 rounded border border-red-500 transition">立即重试</button>
+    </div>
+    <div v-else-if="showRecovered" class="bg-emerald-900/40 border border-emerald-600 text-emerald-200 text-sm px-4 py-3 rounded">
+        网络已恢复，数据同步正常。
+    </div>
+
     <div v-if="showAuthModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-[60]">
         <div class="bg-gray-900 p-6 rounded-lg border border-gray-700 w-80 shadow-2xl">
             <h3 class="text-white font-bold mb-4 text-center">系统授权核查</h3>
@@ -242,9 +250,17 @@
             const POLL_VISIBLE_MS = 4000;
             const POLL_HIDDEN_MS = 15000;
             const FETCH_TIMEOUT_MS = 8000;
+            const RETRY_MAX_ATTEMPTS = 3;
+            const RETRY_BASE_DELAY_MS = 400;
+            const FAILURE_THRESHOLD = 3;
             let pollTimer = null;
             let fetchingPublic = false;
             let fetchingPrivate = false;
+            let recoveredBannerTimer = null;
+
+            const consecutiveFailures = ref(0);
+            const showNetWarning = ref(false);
+            const showRecovered = ref(false);
 
             // 👉 新增状态：弹窗控制
             const showNoticeModal = ref(false);
@@ -256,7 +272,9 @@
                 try {
                     const res = await fetch(url, { ...options, signal: controller.signal, cache: 'no-store' });
                     if (!res.ok) {
-                        throw new Error(`HTTP ${res.status}`);
+                        const err = new Error(`HTTP ${res.status}`);
+                        err.status = res.status;
+                        throw err;
                     }
                     return await res.json();
                 } finally {
@@ -264,31 +282,86 @@
                 }
             };
 
+            const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+            const isRetryableError = (err) => {
+                if (!err) return false;
+                if (err.name === 'AbortError') return true;
+                if (typeof err.status === 'number') return err.status >= 500;
+                return true;
+            };
+
+            const fetchJsonWithRetry = async (url, options = {}) => {
+                let lastError = null;
+                for (let attempt = 1; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
+                    try {
+                        return await fetchJsonWithTimeout(url, options);
+                    } catch (err) {
+                        lastError = err;
+                        if (!isRetryableError(err) || attempt === RETRY_MAX_ATTEMPTS) {
+                            break;
+                        }
+                        const backoff = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+                        const jitter = Math.floor(Math.random() * 120);
+                        await sleep(backoff + jitter);
+                    }
+                }
+                throw lastError;
+            };
+
+            const markSyncFailure = () => {
+                consecutiveFailures.value += 1;
+                if (consecutiveFailures.value >= FAILURE_THRESHOLD) {
+                    showNetWarning.value = true;
+                    showRecovered.value = false;
+                }
+                if (recoveredBannerTimer) {
+                    clearTimeout(recoveredBannerTimer);
+                    recoveredBannerTimer = null;
+                }
+            };
+
+            const markSyncSuccess = () => {
+                const hadWarning = showNetWarning.value;
+                consecutiveFailures.value = 0;
+                showNetWarning.value = false;
+                if (hadWarning) {
+                    showRecovered.value = true;
+                    if (recoveredBannerTimer) clearTimeout(recoveredBannerTimer);
+                    recoveredBannerTimer = setTimeout(() => {
+                        showRecovered.value = false;
+                    }, 4000);
+                }
+            };
+
             const fetchPublicData = async () => {
-                if (fetchingPublic) return;
+                if (fetchingPublic) return true;
                 fetchingPublic = true;
+                let ok = true;
                 const t = new Date().getTime();
                 try {
-                    const dashData = await fetchJsonWithTimeout(`${API_BASE}/dashboard?t=${t}`);
+                    const dashData = await fetchJsonWithRetry(`${API_BASE}/dashboard?t=${t}`);
                     navData.value = dashData.nav;
                     allocations.value = dashData.allocations;
                     allocationMeta.value = dashData.allocation_meta || {};
                     quarterlyInfo.value = dashData.quarterly_info;
-                } catch(e) {}
+                } catch(e) { ok = false; }
                 finally { fetchingPublic = false; }
+                return ok;
             };
 
             const fetchPrivateData = async () => {
-                if(!isAuthenticated.value) return;
-                if (fetchingPrivate) return;
+                if(!isAuthenticated.value) return true;
+                if (fetchingPrivate) return true;
                 fetchingPrivate = true;
+                let ok = true;
                 const t = new Date().getTime();
                 try {
-                    limitStatus.value = await fetchJsonWithTimeout(`${API_BASE}/lp/limit_status?t=${t}`);
-                    messages.value = await fetchJsonWithTimeout(`${API_BASE}/messages?t=${t}`);
-                    myRequests.value = await fetchJsonWithTimeout(`${API_BASE}/lp/my_requests?t=${t}`);
+                    limitStatus.value = await fetchJsonWithRetry(`${API_BASE}/lp/limit_status?t=${t}`);
+                    messages.value = await fetchJsonWithRetry(`${API_BASE}/messages?t=${t}`);
+                    myRequests.value = await fetchJsonWithRetry(`${API_BASE}/lp/my_requests?t=${t}`);
                     
-                    const newNotices = await fetchJsonWithTimeout(`${API_BASE}/lp/notices?t=${t}`);
+                    const newNotices = await fetchJsonWithRetry(`${API_BASE}/lp/notices?t=${t}`);
                     notices.value = newNotices;
                     
                     // 👉 如果有通知，且本次登录还没弹过窗，就强制弹出！
@@ -296,19 +369,29 @@
                         showNoticeModal.value = true;
                         hasSeenNoticesThisSession.value = true; 
                     }
-                } catch(e) {}
+                } catch(e) { ok = false; }
                 finally { fetchingPrivate = false; }
+                return ok;
             };
 
-            const runPolling = () => {
-                fetchPublicData();
-                if (isAuthenticated.value) fetchPrivateData();
+            const runPolling = async () => {
+                const tasks = [fetchPublicData()];
+                if (isAuthenticated.value) tasks.push(fetchPrivateData());
+                const results = await Promise.all(tasks);
+                const allOk = results.every(Boolean);
+                if (allOk) markSyncSuccess();
+                else markSyncFailure();
             };
 
             const restartPolling = () => {
                 if (pollTimer) clearInterval(pollTimer);
                 const interval = document.hidden ? POLL_HIDDEN_MS : POLL_VISIBLE_MS;
                 pollTimer = setInterval(runPolling, interval);
+            };
+
+            const manualRetry = async () => {
+                await runPolling();
+                restartPolling();
             };
 
             const closeNoticeModal = () => { showNoticeModal.value = false; };
@@ -395,6 +478,7 @@
             onUnmounted(() => {
                 if (pollTimer) clearInterval(pollTimer);
                 document.removeEventListener('visibilitychange', restartPolling);
+                if (recoveredBannerTimer) clearTimeout(recoveredBannerTimer);
             });
             
             return { 
@@ -403,7 +487,8 @@
                 form, alphaForm, fileInput, msgInput, messages, myRequests,
                 submitWithdrawal, submitAlpha, claimQuarterly, submitMessage,
                 isUploading, isSubmitting,
-                showNoticeModal, closeNoticeModal // 暴露新变量给模板
+                showNoticeModal, closeNoticeModal,
+                consecutiveFailures, showNetWarning, showRecovered, manualRetry
             }
         }
     }).mount('#app')
