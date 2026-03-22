@@ -55,7 +55,7 @@
 
     <div v-if="showNetWarning" class="bg-red-900/40 border border-red-600 text-red-200 text-sm px-4 py-3 rounded flex items-center justify-between gap-3">
         <span>网络波动，正在自动恢复（连续失败 {{ consecutiveFailures }} 次）。</span>
-        <button @click="manualRetry" class="bg-red-700 hover:bg-red-600 text-white text-xs font-bold px-3 py-1 rounded border border-red-500 transition">立即重试</button>
+        <button @click="manualRetry" :disabled="retryCoolingDown" class="bg-red-700 hover:bg-red-600 text-white text-xs font-bold px-3 py-1 rounded border border-red-500 transition disabled:opacity-50 disabled:cursor-not-allowed">{{ retryCoolingDown ? '重试中...' : '立即重试' }}</button>
     </div>
     <div v-else-if="showRecovered" class="bg-emerald-900/40 border border-emerald-600 text-emerald-200 text-sm px-4 py-3 rounded">
         网络已恢复，数据同步正常。
@@ -261,6 +261,7 @@
             const consecutiveFailures = ref(0);
             const showNetWarning = ref(false);
             const showRecovered = ref(false);
+            const retryCoolingDown = ref(false);
 
             // 👉 新增状态：弹窗控制
             const showNoticeModal = ref(false);
@@ -390,8 +391,13 @@
             };
 
             const manualRetry = async () => {
+                if (retryCoolingDown.value) return;
+                retryCoolingDown.value = true;
                 await runPolling();
                 restartPolling();
+                setTimeout(() => {
+                    retryCoolingDown.value = false;
+                }, 2000);
             };
 
             const closeNoticeModal = () => { showNoticeModal.value = false; };
@@ -488,7 +494,7 @@
                 submitWithdrawal, submitAlpha, claimQuarterly, submitMessage,
                 isUploading, isSubmitting,
                 showNoticeModal, closeNoticeModal,
-                consecutiveFailures, showNetWarning, showRecovered, manualRetry
+                consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown
             }
         }
     }).mount('#app')
