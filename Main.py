@@ -11,15 +11,18 @@ import os
 import shutil
 import secrets
 import requests
+from sqlalchemy.exc import SQLAlchemyError
 
 # ==========================================
 # 0. 环境准备
 # ==========================================
-UPLOAD_DIR = "uploads"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./family_fund.db"
+DB_PATH = os.path.join(BASE_DIR, "family_fund.db")
+SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH}"
 engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -150,6 +153,23 @@ def calculate_system_nav(db: Session, current_date: date):
     r_total = total_principal + total_alpha + total_interest
     return { "R_total": round(r_total, 4), "effective_principal": round(total_principal, 2), "total_alpha": round(total_alpha, 2), "total_compound_interest": round(total_interest, 4) }
 
+def get_display_allocations(db: Session, nav_total: float):
+    """Return allocation amounts adjusted to current NAV for consistent dashboard display."""
+    raw_allocations = db.query(DBAssetAllocation).all()
+    if not raw_allocations:
+        return []
+
+    raw_total = sum(a.allocated_amount for a in raw_allocations if a.allocated_amount and a.allocated_amount > 0)
+    if raw_total <= 0 or nav_total <= 0:
+        return [{"asset": a.asset_name, "amount": 0.0} for a in raw_allocations]
+
+    # If configured allocation exceeds current NAV, scale all legs proportionally.
+    scale = min(1.0, nav_total / raw_total)
+    return [{
+        "asset": a.asset_name,
+        "amount": round(max(0.0, a.allocated_amount * scale), 2)
+    } for a in raw_allocations]
+
 def get_quarterly_info(db: Session):
     event = db.query(DBQuarterlyEvent).order_by(desc(DBQuarterlyEvent.id)).first()
     if not event: return {"status": "INACTIVE", "show_expired": False}
@@ -176,10 +196,11 @@ def verify_lp(req: VerifyReq):
 
 @app.get("/api/v1/dashboard")
 def get_dashboard(db: Session = Depends(get_db)):
+    nav = calculate_system_nav(db, date.today())
     return {
-        "nav": calculate_system_nav(db, date.today()), 
+        "nav": nav,
         "ledger": db.query(DBTransaction).order_by(desc(DBTransaction.tx_date), desc(DBTransaction.id)).limit(20).all(),
-        "allocations": [{"asset": a.asset_name, "amount": a.allocated_amount} for a in db.query(DBAssetAllocation).all()],
+        "allocations": get_display_allocations(db, nav["R_total"]),
         "quarterly_info": get_quarterly_info(db)
     }
 
@@ -220,7 +241,12 @@ def get_messages(db: Session = Depends(get_db)):
 
 @app.post("/api/v1/lp/messages")
 def post_message(content: str = Form(...), db: Session = Depends(get_db)):
-    db.add(DBMessage(content=content)); db.commit()
+    try:
+        db.add(DBMessage(content=content))
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="留言写入失败，请检查服务器数据库写权限。")
     notify_gp_wechat("💬 家庭办公室新留言", f"乙方有话对你说：\n{content}") # 👉 新加的这行
     return {"status": "success"}
 
@@ -234,7 +260,12 @@ def get_limit_status(db: Session = Depends(get_db)):
 def lp_request_withdrawal(amount: float = Form(...), reason: str = Form(...), db: Session = Depends(get_db)):
     limit = get_dynamic_monthly_limit()
     if get_current_month_used(db) + amount > limit: raise HTTPException(status_code=403, detail="触发熔断！超限。")
-    db.add(DBRequest(req_type="WITHDRAWAL_REQ", amount=amount, reason=reason)); db.commit()
+    try:
+        db.add(DBRequest(req_type="WITHDRAWAL_REQ", amount=amount, reason=reason))
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="工单写入失败，请检查服务器数据库写权限。")
     notify_gp_wechat("🚨 资金提款申请", f"弟弟申请提取 ¥{amount}\n理由：{reason}") # 👉 新加的这行
     return {"status": "success", "message": "工单提交成功，等待 GP 审核。"}
 
@@ -261,19 +292,43 @@ async def lp_request_alpha(reason: str = Form(...), file: UploadFile = File(...)
         raise HTTPException(status_code=400, detail="拦截！后端检测到图片体积超过 5MB 的物理限制。")
         
     # 如果没超标，再安安稳稳地存入硬盘
-    loc = f"{UPLOAD_DIR}/{file.filename}"
+    safe_name = os.path.basename(file.filename)
+    loc = os.path.join(UPLOAD_DIR, safe_name)
     with open(loc, "wb") as f: 
         f.write(file_content)
+    proof_url = f"uploads/{safe_name}"
         
-    db.add(DBRequest(req_type="ALPHA_REQ", amount=0.0, reason=reason, proof_image=loc))
-    db.commit()
+    try:
+        db.add(DBRequest(req_type="ALPHA_REQ", amount=0.0, reason=reason, proof_image=proof_url))
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="工单写入失败，请检查服务器数据库写权限。")
     
     # 顺便把咱们的微信通知也带上
     notify_gp_wechat("📈 阿尔法红利申请", f"弟弟提交了一份奖金凭证\n达标说明：{reason}\n请尽快登录后台查阅图片并核定金额。")
     return {"status": "success", "message": "阿尔法凭证已上传成功！"}
 
 @app.get("/api/v1/lp/my_requests")
-def lp_get_my_requests(db: Session = Depends(get_db)): return db.query(DBRequest).order_by(desc(DBRequest.req_date), desc(DBRequest.id)).limit(10).all()
+def lp_get_my_requests(db: Session = Depends(get_db)):
+    """获取乙方提交的最新 10 条工单 (防止历史包袱过重)"""
+    # 1. 先从数据库里把原生的数据捞出来
+    requests = db.query(DBRequest).order_by(desc(DBRequest.req_date), desc(DBRequest.id)).limit(10).all()
+    
+    # 2. 手动打包！翻译成前端能看懂的格式
+    req_list = []
+    for r in requests:
+        req_list.append({
+            "id": r.id,
+            "req_date": str(r.req_date),  # 关键！把日期强制转成字符串，FastAPI 就不懵了
+            "req_type": r.req_type,
+            "amount": r.amount,
+            "reason": r.reason,
+            "status": r.status
+        })
+        
+    # 3. 把打包好的漂亮盒子送给前端
+    return req_list
 
 @app.post("/api/v1/gp/messages/{msg_id}/reply")
 def reply_message(msg_id: int, reply: str = Form(...), db: Session = Depends(get_db)):
@@ -306,7 +361,17 @@ def toggle_quarterly(db: Session = Depends(get_db)):
     return {"status": "success", "message": "72小时倒计时派息令已强势发布！"}
 
 @app.get("/api/v1/gp/pending_requests")
-def gp_get_pending_requests(db: Session = Depends(get_db)): return db.query(DBRequest).filter(DBRequest.status == "PENDING").all()
+def gp_get_pending_requests(db: Session = Depends(get_db)):
+    requests = db.query(DBRequest).filter(DBRequest.status == "PENDING").order_by(desc(DBRequest.req_date), desc(DBRequest.id)).all()
+    return [{
+        "id": r.id,
+        "req_date": str(r.req_date),
+        "req_type": r.req_type,
+        "amount": r.amount,
+        "reason": r.reason,
+        "proof_image": r.proof_image,
+        "status": r.status
+    } for r in requests]
 
 @app.post("/api/v1/gp/process_request/{req_id}")
 def gp_process_request(req_id: int, action: str, final_amount: float = 0.0, reject_reason: str = "", db: Session = Depends(get_db)):

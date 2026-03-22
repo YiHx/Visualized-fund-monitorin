@@ -295,7 +295,12 @@
                 isSubmitting.value = true;
                 try {
                     const fd = new FormData(); fd.append('content', msgInput.value);
-                    await fetch(`${API_BASE}/lp/messages`, { method: 'POST', body: fd }); 
+                    const res = await fetch(`${API_BASE}/lp/messages`, { method: 'POST', body: fd });
+                    if (!res.ok) {
+                        const err = await res.json().catch(() => ({ detail: '留言提交失败，请稍后重试。' }));
+                        alert(err.detail || '留言提交失败，请稍后重试。');
+                        return;
+                    }
                     msgInput.value = ''; fetchPrivateData();
                 } finally { isSubmitting.value = false; }
             };
