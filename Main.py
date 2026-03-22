@@ -87,6 +87,35 @@ class DBNotice(Base):
 
 Base.metadata.create_all(bind=engine)
 
+# ==========================================
+# 数据库迁移：检查并添加缺失的列
+# ==========================================
+def ensure_db_schema():
+    """检查数据库表结构，添加缺失的列"""
+    from sqlalchemy import inspect, text
+    
+    inspector = inspect(engine)
+    db = SessionLocal()
+    
+    try:
+        # 检查 messages 表是否有 attachment_url 列
+        if "messages" in inspector.get_table_names():
+            columns = {col['name'] for col in inspector.get_columns('messages')}
+            
+            if 'attachment_url' not in columns:
+                print("🔧 检测到缺失列：messages.attachment_url，正在自动修复...")
+                db.execute(text("ALTER TABLE messages ADD COLUMN attachment_url VARCHAR"))
+                db.commit()
+                print("✅ 数据库迁移完成：已添加 attachment_url 列")
+    except Exception as e:
+        print(f"⚠️  数据库迁移出现警告（可忽略）：{e}")
+        db.rollback()
+    finally:
+        db.close()
+
+# 启动时执行迁移
+ensure_db_schema()
+
 app = FastAPI(title="家庭高净值资产控制台")
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 app.add_middleware(GZipMiddleware, minimum_size=500)
