@@ -47,7 +47,7 @@ from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, Form, sta
 #
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response, PlainTextResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
@@ -249,6 +249,7 @@ async def ctf_header_middleware(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Hint"] = "Try /robots.txt and view page source!"
     response.headers["X-CTF-Challenge"] = "Find all 11 FLAG{...} tokens hidden in this site!"
+    response.headers["X-Powered-By"] = "Rin-Tohsaka-Jewel-Magecraft-v2.5"
     response.headers["X-Flag-3"] = "FLAG{http_headers_tell_all}"
     response.headers["X-Next-Step"] = "Check Cookies and source code for more flags"
     return response
@@ -1332,45 +1333,321 @@ def go_shortcut(path: str, db: Session = Depends(get_db)):
 import random as _random
 
 def _ensure_ctf_seeds(db: Session):
-    """种子CTF题目"""
-    if db.query(DBCTFFlag).count() > 0:
+    """Seed 100 CTF challenges"""
+    if db.query(DBCTFFlag).count() >= 90:
         return
+    db.query(DBCTFFlag).delete()
+    db.query(DBCTFHint).delete()
     flags = [
-        DBCTFFlag(flag_key="FLAG{robots_are_not_your_enemy}", title="🤖 robots.txt 的秘密", description="有时候，搜索引擎不想看到的东西，正是你想找的。", points=10, difficulty="easy"),
-        DBCTFFlag(flag_key="FLAG{source_code_is_your_friend}", title="📜 源码里的宝藏", description="查看网页源代码，找找有没有藏起来的东西。", points=10, difficulty="easy"),
-        DBCTFFlag(flag_key="FLAG{http_headers_tell_all}", title="📨 请求头的秘密", description="服务器每次回复都会带上很多信息，检查一下响应头。", points=15, difficulty="easy"),
-        DBCTFFlag(flag_key="FLAG{console_is_your_best_friend}", title="💻 开发者控制台", description="F12打开控制台，看看有没有特别的东西。", points=10, difficulty="easy"),
-        DBCTFFlag(flag_key="FLAG{cookies_are_delicious}", title="🍪 Cookie 里藏了什么", description="检查一下网站给你发了什么Cookie。", points=15, difficulty="medium"),
-        DBCTFFlag(flag_key="FLAG{base64_is_not_encryption}", title="🔐 Base64 不是加密", description="Q29uZ3JhdHVsYXRpb25zISBZb3UgZm91bmQgaXQh", points=15, difficulty="medium"),
-        DBCTFFlag(flag_key="FLAG{sql_injection_is_still_a_thing}", title="💉 SQL 注入入门", description="尝试在登录框输入 ' OR '1'='1 会发生什么？", points=20, difficulty="medium"),
-        DBCTFFlag(flag_key="FLAG{jwt_tokens_are_not_magic}", title="🎫 JWT Token 解析", description="抓到GP的token，去jwt.io看看里面有什么。", points=20, difficulty="hard"),
-        DBCTFFlag(flag_key="FLAG{api_endpoints_are_everywhere}", title="🗺️ API 端点探测绘", description="试试 /api/v1/ 后面加上各种路径，或者看 /openapi.json", points=25, difficulty="hard"),
-        DBCTFFlag(flag_key="FLAG{the_42nd_challenge}", title="🐬 终极答案", description="在页面上输入某个著名的数字...", points=30, difficulty="hard"),
-        DBCTFFlag(flag_key="FLAG{you_are_a_real_hacker_now}", title="🏆 真·白客认证", description="如果你能看到这个，说明你已经掌握了Web渗透的基础。恭喜！", points=50, difficulty="legendary"),
+        DBCTFFlag(flag_key='FLAG{welcome_to_ctf}', title='👋 Welcome to CTF!', description='访问 /ctf 页面看看', points=10, difficulty="tutorial"),
+        DBCTFFlag(flag_key='FLAG{view_source_is_step_one}', title='📜 查看源代码', description='右键→查看网页源代码，永远是你最好的朋友', points=10, difficulty="tutorial"),
+        DBCTFFlag(flag_key='FLAG{http_headers_tell_all}', title='📨 HTTP响应头藏宝', description='F12→Network→刷新→点第一个请求→Response Headers', points=10, difficulty="tutorial"),
+        DBCTFFlag(flag_key='FLAG{robots_are_not_your_enemy}', title='🤖 robots.txt 的秘密', description='访问 /robots.txt — 搜索引擎不想让你看的东西', points=10, difficulty="tutorial"),
+        DBCTFFlag(flag_key='FLAG{source_code_is_your_friend}', title='🔍 HTML注释挖掘', description='查看网页源代码，找HTML注释 <!-- ... -->', points=10, difficulty="tutorial"),
+        DBCTFFlag(flag_key='FLAG{console_is_your_best_friend}', title='💻 开发者控制台', description='F12→Console标签，看看log消息', points=10, difficulty="tutorial"),
+        DBCTFFlag(flag_key='FLAG{cookies_are_delicious}', title='🍪 Cookie里藏了什么', description='F12→Application→Cookies→yhymoney.asia', points=10, difficulty="tutorial"),
+        DBCTFFlag(flag_key='FLAG{meta_tags_hide_secrets}', title='🏷️ Meta标签探秘', description='查看页面 <head> 里的 <meta> 标签', points=10, difficulty="tutorial"),
+        DBCTFFlag(flag_key='FLAG{f12_is_your_gateway}', title='🚪 F12是万能钥匙', description='Developer Tools是你进入渗透世界的大门', points=10, difficulty="tutorial"),
+        DBCTFFlag(flag_key='FLAG{every_journey_begins_with_curiosity}', title='🌟 好奇心是最好的老师', description='你已经完成了入门关卡！继续前进吧！', points=10, difficulty="tutorial"),
+        DBCTFFlag(flag_key='FLAG{base64_is_not_encryption}', title='🔐 Base64不是加密', description='Q29uZ3JhdHVsYXRpb25zISBZb3UgZm91bmQgaXQh', points=15, difficulty="easy"),
+        DBCTFFlag(flag_key='FLAG{rot13_is_the_original_crypto}', title='🔄 ROT13 — 最原始的加密', description='SYNT{sbg13_vf_gur_bevtvany_pelcgb}', points=15, difficulty="easy"),
+        DBCTFFlag(flag_key='FLAG{hex_is_everywhere}', title='🔢 十六进制解码', description='464c41477b6865785f69735f657665727977686572657d', points=15, difficulty="easy"),
+        DBCTFFlag(flag_key='FLAG{morse_code_is_classic}', title='📡 摩尔斯电码', description='..-. .-.. .- --. -.--. -- --- .-. ... . ..--.- -.-. --- -.. . ..--.- .. ... ..--.- -.-. .-.. .- ... ... .. -.-. -.--.-', points=15, difficulty="easy"),
+        DBCTFFlag(flag_key='FLAG{url_encoding_hides_things}', title='🔗 URL编码解码', description='%46%4C%41%47%7B%75%72%6C%5F%65%6E%63%6F%64%69%6E%67%5F%68%69%64%65%73%5F%74%68%69%6E%67%73%7D', points=15, difficulty="easy"),
+        DBCTFFlag(flag_key='FLAG{binary_is_the_native_tongue}', title='0️⃣1️⃣ 二进制转换', description='01000110 01001100 01000001 01000111 01111011 01100010 01101001 01101110 01100001 01110010 01111001 01011111 01101001 01110011 01011111 01110100 01101000 01100101 01011111 01101110 01100001 01110100 01101001 01110110 01100101 01011111 01110100 01101111 01101110 01100111 01110101 01100101 01111101', points=15, difficulty="easy"),
+        DBCTFFlag(flag_key='FLAG{hidden_in_plain_sight}', title='👁️ 隐藏的颜色', description='查看CSS中的注释或隐藏文字（color: transparent / font-size: 0）', points=15, difficulty="easy"),
+        DBCTFFlag(flag_key='FLAG{http_methods_matter}', title='📮 HTTP方法大冒险', description='试试用 POST/DELETE/PUT/PATCH 访问 /api/v1/ctf/status', points=15, difficulty="easy"),
+        DBCTFFlag(flag_key='FLAG{comment_out_the_truth}', title='💬 JS注释里的秘密', description='查看页面JavaScript源码，找 // 或 /* */ 注释', points=15, difficulty="easy"),
+        DBCTFFlag(flag_key='FLAG{error_pages_tell_stories}', title='⚠️ 404页面也有料', description='访问一个不存在的页面，看404页面说了什么', points=15, difficulty="easy"),
+        DBCTFFlag(flag_key='FLAG{backup_files_are_dangerous}', title='📦 备份文件泄露', description='访问 /backup.zip 或者 /backup.tar.gz', points=15, difficulty="easy"),
+        DBCTFFlag(flag_key='FLAG{hidden_api_endpoints}', title='🗺️ API端点探测', description='访问 /docs 或 /openapi.json 看全部接口', points=15, difficulty="easy"),
+        DBCTFFlag(flag_key='FLAG{jwt_tokens_are_not_magic}', title='🎫 JWT Token解析', description='抓取任意请求的 X-GP-Token，去 jwt.io 看看', points=15, difficulty="easy"),
+        DBCTFFlag(flag_key='FLAG{referer_header_leaks}', title='↩️ Referer头的秘密', description='检查HTTP请求的 Referer 头', points=15, difficulty="easy"),
+        DBCTFFlag(flag_key='FLAG{user_agent_can_lie}', title='🤖 User-Agent伪装', description="试试用 curl -A 'Googlebot' 访问网站", points=15, difficulty="easy"),
+        DBCTFFlag(flag_key='FLAG{ssti_smells_fishy}', title='🐟 SSTI探测', description='在URL参数中试试 {{7*7}}', points=15, difficulty="easy"),
+        DBCTFFlag(flag_key='FLAG{directory_listing_forbidden}', title='📂 目录遍历尝试', description='访问 /uploads/ /static/ /assets/ /images/', points=15, difficulty="easy"),
+        DBCTFFlag(flag_key='FLAG{xss_is_everywhere}', title='💉 XSS基础', description='在留言板输入 <script>alert(1)</script>', points=15, difficulty="easy"),
+        DBCTFFlag(flag_key='FLAG{csrf_token_missing}', title='🛡️ CSRF Token缺失', description='检查POST请求是否缺乏CSRF保护', points=15, difficulty="easy"),
+        DBCTFFlag(flag_key='FLAG{localstorage_is_not_safe}', title='💾 LocalStorage的秘密', description='F12→Application→Local Storage→yhymoney.asia', points=15, difficulty="easy"),
+        DBCTFFlag(flag_key='FLAG{md5_is_broken_use_sha256}', title='🔓 MD5已被破解', description="md5('flag') = ? 研究一下哈希碰撞", points=20, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{xor_with_single_byte}', title='🔮 单字节XOR解密', description='XOR encrypted: 2c0700170b1316591f131f561c0a1c0f561918131e031f570e', points=20, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{vigenere_is_classic_crypto}', title='📜 维吉尼亚密码', description="Vigenere with key 'RIN': WFNX{iphertb_fv_phnfprn_wnnqk}", points=20, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{sql_injection_is_still_a_thing}', title='💉 SQL注入入门', description="在PIN输入框输入 ' OR '1'='1", points=20, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{nosql_injection_exists_too}', title='🗄️ NoSQL注入', description='试试在请求中传入 $ne (not equal) 操作符', points=20, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{command_injection_backticks}', title='⌨️ 命令注入', description='试试在输入框输入 ; ls 或 `whoami`', points=20, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{idor_is_simple_but_deadly}', title='🆔 IDOR — 不安全的直接对象引用', description='试试修改API请求的ID参数：/api/v1/gp/process_request/1 → /2', points=20, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{rate_limiting_is_absent}', title='⏱️ 速率限制缺失', description='连续发送100次相同请求，看是否被限流', points=25, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{path_traversal_dot_dot_slash}', title='📁 路径穿越', description='试试 ../../etc/passwd 之类的payload', points=20, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{xxe_is_still_relevant}', title='📄 XXE — XML外部实体注入', description='提交XML数据试试外部实体引用', points=25, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{ssrf_is_the_sleeper_threat}', title='🌐 SSRF — 服务端请求伪造', description='试试让服务器访问内部地址 127.0.0.1', points=25, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{deserialization_is_dangerous}', title='🧩 反序列化攻击', description='Python pickle反序列化可以执行任意代码', points=25, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{jwt_none_algorithm_attack}', title='🎫 JWT None算法攻击', description='把JWT的alg改成none会怎样？', points=25, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{timing_attack_is_subtle}', title='⏳ 时序攻击基础', description='比较两个请求的响应时间差异', points=25, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{steganography_in_images}', title='🖼️ 图片隐写术', description='检查网站上的图片，看有没有藏东西', points=20, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{strings_command_is_powerful}', title='🔤 strings命令的力量', description='用 strings 命令检查二进制文件', points=20, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{metafile_data_leaks}', title='📸 元数据泄露', description='检查上传图片的EXIF数据', points=20, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{git_exposed_dot_git}', title='📂 .git泄露', description='访问 /.git/HEAD 或者 /.git/config', points=25, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{env_file_leaked}', title='🟢 .env文件泄露', description='访问 /.env 看环境变量', points=25, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{dockerfile_tells_the_stack}', title='🐳 Dockerfile泄露', description='访问 /Dockerfile 看部署配置', points=20, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{cors_misconfiguration}', title='🌍 CORS配置不当', description='检查CORS头是否过于宽松', points=20, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{clickjacking_missing_xframe}', title='🖼️ Clickjacking漏洞', description='检查是否缺少 X-Frame-Options 头', points=20, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{csp_is_not_configured}', title='🛡️ CSP未配置', description='检查 Content-Security-Policy 头是否存在', points=20, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{hsts_missing}', title='🔒 HSTS未启用', description='检查 Strict-Transport-Security 头', points=20, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{caesar_cipher_is_ancient}', title='🏛️ 凯撒密码', description='WKHQJ_BRFHVDU_BLSKHU_CL_DQFLHQW', points=20, difficulty="medium"),
+        DBCTFFlag(flag_key='FLAG{aes_ecb_penguin}', title='🐧 AES ECB模式的企鹅', description='ECB模式加密同一明文产生同一密文—你能发现吗？', points=30, difficulty="hard"),
+        DBCTFFlag(flag_key='FLAG{padding_oracle_is_classic}', title='🔮 Padding Oracle攻击', description='试试修改加密数据的padding', points=35, difficulty="hard"),
+        DBCTFFlag(flag_key='FLAG{length_extension_attack}', title='📏 长度扩展攻击', description='SHA256(key+message)的可扩展性', points=35, difficulty="hard"),
+        DBCTFFlag(flag_key='FLAG{rsa_wiener_attack}', title='🔑 RSA Wiener攻击', description='当d很小的时候，RSA可能被破解', points=35, difficulty="hard"),
+        DBCTFFlag(flag_key='FLAG{bleichenbacher_oracle}', title='📨 Bleichenbacher Oracle', description='PKCS#1 v1.5 padding的RSA可能被攻破', points=35, difficulty="hard"),
+        DBCTFFlag(flag_key='FLAG{buffer_overflow_in_the_wild}', title='💥 缓冲区溢出概念', description='理解栈溢出如何覆盖返回地址', points=30, difficulty="hard"),
+        DBCTFFlag(flag_key='FLAG{format_string_is_powerful}', title='📝 格式化字符串攻击', description='%x %x %x %x 可以泄露栈信息', points=30, difficulty="hard"),
+        DBCTFFlag(flag_key='FLAG{ret2libc_is_a_technique}', title='🔗 Return-to-libc攻击', description='绕过NX bit的技术', points=35, difficulty="hard"),
+        DBCTFFlag(flag_key='FLAG{rop_chains_are_art}', title='⛓️ ROP链——二进制利用的艺术', description='Return-Oriented Programming', points=35, difficulty="hard"),
+        DBCTFFlag(flag_key='FLAG{heap_exploitation_basics}', title='🗑️ 堆利用基础', description='Use-After-Free, Double-Free 等', points=35, difficulty="hard"),
+        DBCTFFlag(flag_key='FLAG{race_condition_toctou}', title='🏃 TOCTOU竞态条件', description='Time-of-Check vs Time-of-Use', points=30, difficulty="hard"),
+        DBCTFFlag(flag_key='FLAG{dns_rebinding_attack}', title='🌐 DNS Rebinding攻击', description='让浏览器攻击内网设备', points=35, difficulty="hard"),
+        DBCTFFlag(flag_key='FLAG{prototype_pollution_in_js}', title='🧬 JS原型污染', description='__proto__ 和 constructor.prototype', points=30, difficulty="hard"),
+        DBCTFFlag(flag_key='FLAG{oauth2_misconfiguration}', title='🔐 OAuth2配置错误', description='redirect_uri验证不严导致token泄露', points=35, difficulty="hard"),
+        DBCTFFlag(flag_key='FLAG{saml_bypass_via_comment}', title='📋 SAML注入', description='SAML断言中的XML注释可以绕过验证', points=35, difficulty="hard"),
+        DBCTFFlag(flag_key='FLAG{graphql_introspection_enabled}', title='🔍 GraphQL Introspection', description='GraphQL自省功能可能泄露Schema', points=30, difficulty="hard"),
+        DBCTFFlag(flag_key='FLAG{http_request_smuggling}', title='🚛 HTTP请求走私', description='利用Content-Length和Transfer-Encoding的不一致', points=35, difficulty="hard"),
+        DBCTFFlag(flag_key='FLAG{websocket_hijacking}', title='🔌 WebSocket劫持', description='缺少origin检查的WebSocket连接', points=30, difficulty="hard"),
+        DBCTFFlag(flag_key='FLAG{subdomain_takeover_potential}', title='🌍 子域名接管', description='查找DNS dangling记录', points=30, difficulty="hard"),
+        DBCTFFlag(flag_key='FLAG{shodan_is_your_eye}', title='🔭 Shodan搜索引擎', description='用Shodan扫描你的服务器暴露了什么', points=30, difficulty="hard"),
+        DBCTFFlag(flag_key='FLAG{zero_day_is_a_mindset}', title='💎 零日漏洞思维', description='理解漏洞发现的方法论', points=40, difficulty="expert"),
+        DBCTFFlag(flag_key='FLAG{fuzzing_finds_bugs}', title='🎯 Fuzzing测试', description='用AFL/libFuzzer对程序进行模糊测试', points=40, difficulty="expert"),
+        DBCTFFlag(flag_key='FLAG{symbolic_execution_is_magic}', title='🔮 符号执行', description='用angr解题的技巧', points=45, difficulty="expert"),
+        DBCTFFlag(flag_key='FLAG{return_oriented_shellcode}', title='💣 ROP到Shellcode', description='完整的ROP链构建', points=45, difficulty="expert"),
+        DBCTFFlag(flag_key='FLAG{kernel_exploitation_101}', title='🐧 内核漏洞利用入门', description='理解内核态vs用户态', points=45, difficulty="expert"),
+        DBCTFFlag(flag_key='FLAG{side_channel_is_stealthy}', title='👻 侧信道攻击', description='通过功耗/电磁/时间泄露信息', points=45, difficulty="expert"),
+        DBCTFFlag(flag_key='FLAG{cache_timing_is_real}', title='⚡ 缓存时序攻击', description='Spectre和Meltdown的原理', points=45, difficulty="expert"),
+        DBCTFFlag(flag_key='FLAG{quantum_crypto_is_coming}', title='🔬 后量子密码学', description='Shor算法和格密码', points=45, difficulty="expert"),
+        DBCTFFlag(flag_key='FLAG{blockchain_smart_contract_bugs}', title='⛓️ 智能合约漏洞', description='Reentrancy, Integer Overflow, Flash Loans', points=40, difficulty="expert"),
+        DBCTFFlag(flag_key='FLAG{reverse_engineering_is_an_art}', title='🔧 逆向工程的艺术', description='用Ghidra/IDA分析二进制文件', points=40, difficulty="expert"),
+        DBCTFFlag(flag_key='FLAG{code_audit_is_essential}', title='📖 代码审计方法论', description='学会系统地阅读代码找漏洞', points=40, difficulty="expert"),
+        DBCTFFlag(flag_key='FLAG{threat_modeling_is_proactive}', title='🗺️ 威胁建模', description='STRIDE模型和攻击树', points=40, difficulty="expert"),
+        DBCTFFlag(flag_key='FLAG{red_team_is_the_ultimate_test}', title='🔴 红队攻击模拟', description='完整的渗透测试方法论', points=45, difficulty="expert"),
+        DBCTFFlag(flag_key='FLAG{pwn_college_is_a_thing}', title='🎓 Pwn College', description='pwn.college 是一个超棒的学习平台', points=40, difficulty="expert"),
+        DBCTFFlag(flag_key='FLAG{hackthebox_is_your_playground}', title='📦 HackTheBox', description='HTB是最好的实战训练平台之一', points=40, difficulty="expert"),
+        DBCTFFlag(flag_key='FLAG{you_are_a_real_hacker_now}', title='🏆 真·白客认证', description='集齐90个flag！你已经掌握了Web渗透的全套技能', points=50, difficulty="legendary"),
+        DBCTFFlag(flag_key='FLAG{the_42nd_challenge}', title='🐬 终极答案', description='在页面上输入某个著名的数字...', points=50, difficulty="legendary"),
+        DBCTFFlag(flag_key='FLAG{full_chain_exploitation}', title='⛓️ 全链条利用', description='从信息收集→漏洞发现→利用→提权→持久化', points=50, difficulty="legendary"),
+        DBCTFFlag(flag_key='FLAG{responsible_disclosure_is_key}', title='🤝 负责任的漏洞披露', description='发现漏洞后该怎么做', points=50, difficulty="legendary"),
+        DBCTFFlag(flag_key='FLAG{every_expert_was_once_a_beginner}', title='🌱 不忘初心', description='即使是最厉害的黑客，也曾是个小白', points=50, difficulty="legendary"),
+        DBCTFFlag(flag_key='FLAG{sharing_knowledge_is_the_way}', title='📚 知识分享', description='把你的CTF解题过程写成writeup', points=50, difficulty="legendary"),
+        DBCTFFlag(flag_key='FLAG{white_hat_is_a_lifestyle}', title='🎩 白客是一种生活方式', description='用你的技能让互联网变得更安全', points=50, difficulty="legendary"),
+        DBCTFFlag(flag_key='FLAG{bug_bounty_is_waiting}', title='💰 Bug Bounty在等你', description='HackerOne, Bugcrowd等平台', points=50, difficulty="legendary"),
+        DBCTFFlag(flag_key='FLAG{the_learning_never_stops}', title='📖 学无止境', description='安全领域每天都有新东西', points=50, difficulty="legendary"),
+        DBCTFFlag(flag_key='FLAG{the_final_boss_defeated}', title='👑 最终BOSS — 击败！', description='100/100！你已经完成了全部CTF挑战', points=50, difficulty="legendary"),
     ]
-    for f in flags:
-        db.add(f)
+    for f in flags: db.add(f)
     db.commit()
-
-    # 种子提示
     hints = [
-        DBCTFFlag(flag_key="FLAG{robots_are_not_your_enemy}", hint_text="试试访问 /robots.txt", hint_order=1),
-        DBCTFFlag(flag_key="FLAG{source_code_is_your_friend}", hint_text="右键→查看网页源代码", hint_order=1),
-        DBCTFFlag(flag_key="FLAG{http_headers_tell_all}", hint_text="F12→Network→刷新页面→看Response Headers", hint_order=1),
-        DBCTFFlag(flag_key="FLAG{console_is_your_best_friend}", hint_text="按F12，点Console标签", hint_order=1),
-        DBCTFFlag(flag_key="FLAG{cookies_are_delicious}", hint_text="F12→Application→Cookies", hint_order=1),
-        DBCTFFlag(flag_key="FLAG{base64_is_not_encryption}", hint_text="Q29uZ3JhdHVsYXRpb25zISBZb3UgZm91bmQgaXQh 是什么编码？", hint_order=1),
-        DBCTFFlag(flag_key="FLAG{sql_injection_is_still_a_thing}", hint_text="试试在登录框输入特殊字符", hint_order=1),
-        DBCTFFlag(flag_key="FLAG{jwt_tokens_are_not_magic}", hint_text="登录GP后台，抓取X-GP-Token请求头", hint_order=1),
-        DBCTFFlag(flag_key="FLAG{api_endpoints_are_everywhere}", hint_text="访问 /docs 或 /openapi.json 看看所有API", hint_order=1),
-        DBCTFFlag(flag_key="FLAG{the_42nd_challenge}", hint_text="在你的键盘上输入那个问题的答案", hint_order=1),
-        DBCTFFlag(flag_key="FLAG{you_are_a_real_hacker_now}", hint_text="集齐所有flag即可解锁", hint_order=1),
+        DBCTFHint(flag_key='FLAG{welcome_to_ctf}', hint_text='The journey begins here.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{welcome_to_ctf}', hint_text='访问 /ctf 页面', hint_order=2),
+        DBCTFHint(flag_key='FLAG{view_source_is_step_one}', hint_text='Right-click anywhere on the page.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{view_source_is_step_one}', hint_text='右键→查看网页源代码', hint_order=2),
+        DBCTFHint(flag_key='FLAG{http_headers_tell_all}', hint_text='Every HTTP response carries metadata.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{http_headers_tell_all}', hint_text='F12→Network→刷新→点第一个请求', hint_order=2),
+        DBCTFHint(flag_key='FLAG{robots_are_not_your_enemy}', hint_text='robots.txt tells crawlers what to avoid.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{robots_are_not_your_enemy}', hint_text='访问 /robots.txt', hint_order=2),
+        DBCTFHint(flag_key='FLAG{source_code_is_your_friend}', hint_text='View source and look for <!-- comments -->.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{source_code_is_your_friend}', hint_text="右键查看源码→搜索'FLAG'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{console_is_your_best_friend}', hint_text='The console.log() function is your friend.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{console_is_your_best_friend}', hint_text='F12→Console标签', hint_order=2),
+        DBCTFHint(flag_key='FLAG{cookies_are_delicious}', hint_text='Cookies store data sent by the server.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{cookies_are_delicious}', hint_text='F12→Application→Cookies', hint_order=2),
+        DBCTFHint(flag_key='FLAG{meta_tags_hide_secrets}', hint_text='Check the <head> section of the HTML.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{meta_tags_hide_secrets}', hint_text="查看网页源码→搜索'meta'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{f12_is_your_gateway}', hint_text='Press F12 on your keyboard.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{f12_is_your_gateway}', hint_text='按F12键', hint_order=2),
+        DBCTFHint(flag_key='FLAG{every_journey_begins_with_curiosity}', hint_text="You've completed the tutorial!", hint_order=1),
+        DBCTFHint(flag_key='FLAG{every_journey_begins_with_curiosity}', hint_text='恭喜完成入门！下一关开始真正的挑战', hint_order=2),
+        DBCTFHint(flag_key='FLAG{base64_is_not_encryption}', hint_text='What encoding ends with = or == ?', hint_order=1),
+        DBCTFHint(flag_key='FLAG{base64_is_not_encryption}', hint_text="echo 'Q29uZ...' | base64 -d", hint_order=2),
+        DBCTFHint(flag_key='FLAG{rot13_is_the_original_crypto}', hint_text='Rotate each letter by 13 positions.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{rot13_is_the_original_crypto}', hint_text="www.rot13.com 或 tr 'A-Za-z' 'N-ZA-Mn-za-m'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{hex_is_everywhere}', hint_text='Each 2 characters = 1 byte in hex.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{hex_is_everywhere}', hint_text="echo '464c...' | xxd -r -p", hint_order=2),
+        DBCTFHint(flag_key='FLAG{morse_code_is_classic}', hint_text='.- is A, -... is B, etc.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{morse_code_is_classic}', hint_text="搜索'morse code decoder'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{url_encoding_hides_things}', hint_text='%XX is URL-encoded hex.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{url_encoding_hides_things}', hint_text='decodeURIComponent() 或在线URL解码', hint_order=2),
+        DBCTFHint(flag_key='FLAG{binary_is_the_native_tongue}', hint_text='8 bits = 1 ASCII character.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{binary_is_the_native_tongue}', hint_text="搜索'binary to text converter'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{hidden_in_plain_sight}', hint_text='Look for CSS that hides text visually.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{hidden_in_plain_sight}', hint_text="F12→Elements→搜索'hidden'或'color:'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{http_methods_matter}', hint_text="GET isn't the only HTTP method.", hint_order=1),
+        DBCTFHint(flag_key='FLAG{http_methods_matter}', hint_text='curl -X POST https://yhymoney.asia/api/v1/ctf/status', hint_order=2),
+        DBCTFHint(flag_key='FLAG{comment_out_the_truth}', hint_text='Check the JavaScript source for comments.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{comment_out_the_truth}', hint_text='查看页面JS文件中的注释', hint_order=2),
+        DBCTFHint(flag_key='FLAG{error_pages_tell_stories}', hint_text="Try accessing a page that doesn't exist.", hint_order=1),
+        DBCTFHint(flag_key='FLAG{error_pages_tell_stories}', hint_text='yhymoney.asia/nonexistent', hint_order=2),
+        DBCTFHint(flag_key='FLAG{backup_files_are_dangerous}', hint_text='Developers often leave backup files.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{backup_files_are_dangerous}', hint_text='试试 /backup.zip /backup.tar.gz /backup.old', hint_order=2),
+        DBCTFHint(flag_key='FLAG{hidden_api_endpoints}', hint_text='FastAPI auto-generates API documentation.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{hidden_api_endpoints}', hint_text='访问 /docs 或 /openapi.json', hint_order=2),
+        DBCTFHint(flag_key='FLAG{jwt_tokens_are_not_magic}', hint_text='JWT has 3 parts separated by dots.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{jwt_tokens_are_not_magic}', hint_text='F12→Network→看请求头→复制token→jwt.io', hint_order=2),
+        DBCTFHint(flag_key='FLAG{referer_header_leaks}', hint_text='The Referer header tells where you came from.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{referer_header_leaks}', hint_text='F12→Network→Request Headers→Referer', hint_order=2),
+        DBCTFHint(flag_key='FLAG{user_agent_can_lie}', hint_text='You can pretend to be any browser.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{user_agent_can_lie}', hint_text="curl -A 'Googlebot' https://yhymoney.asia/", hint_order=2),
+        DBCTFHint(flag_key='FLAG{ssti_smells_fishy}', hint_text='Server-Side Template Injection leaves patterns.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{ssti_smells_fishy}', hint_text='/api/v1/fun/list?test={{7*7}}', hint_order=2),
+        DBCTFHint(flag_key='FLAG{directory_listing_forbidden}', hint_text='Some directories might list their contents.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{directory_listing_forbidden}', hint_text='试试各种常见目录路径', hint_order=2),
+        DBCTFHint(flag_key='FLAG{xss_is_everywhere}', hint_text='Cross-Site Scripting — injected JavaScript.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{xss_is_everywhere}', hint_text='留言板输入框测试特殊字符', hint_order=2),
+        DBCTFHint(flag_key='FLAG{csrf_token_missing}', hint_text='Cross-Site Request Forgery needs tokens.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{csrf_token_missing}', hint_text='检查POST请求的form data', hint_order=2),
+        DBCTFHint(flag_key='FLAG{localstorage_is_not_safe}', hint_text='localStorage stores data in your browser.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{localstorage_is_not_safe}', hint_text='F12→Application→Local Storage', hint_order=2),
+        DBCTFHint(flag_key='FLAG{md5_is_broken_use_sha256}', hint_text='MD5 has known collisions.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{md5_is_broken_use_sha256}', hint_text="echo -n 'flag' | md5sum", hint_order=2),
+        DBCTFHint(flag_key='FLAG{xor_with_single_byte}', hint_text='Try XOR with a single byte key.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{xor_with_single_byte}', hint_text="搜索'single-byte XOR decoder'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{vigenere_is_classic_crypto}', hint_text='Vigenère cipher uses a repeating keyword.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{vigenere_is_classic_crypto}', hint_text="搜索'Vigenère cipher decoder'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{sql_injection_is_still_a_thing}', hint_text='SQL injection tricks the database.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{sql_injection_is_still_a_thing}', hint_text="在LP PIN验证框输入 ' OR '1'='1", hint_order=2),
+        DBCTFHint(flag_key='FLAG{nosql_injection_exists_too}', hint_text='NoSQL databases have their own injection.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{nosql_injection_exists_too}', hint_text="搜索'NoSQL injection $ne'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{command_injection_backticks}', hint_text='Shell command injection via unsanitized input.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{command_injection_backticks}', hint_text="搜索'command injection payloads'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{idor_is_simple_but_deadly}', hint_text='Insecure Direct Object Reference.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{idor_is_simple_but_deadly}', hint_text='修改URL中的数字ID', hint_order=2),
+        DBCTFHint(flag_key='FLAG{rate_limiting_is_absent}', hint_text='Without rate limiting, brute force is easy.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{rate_limiting_is_absent}', hint_text='写个循环发请求', hint_order=2),
+        DBCTFHint(flag_key='FLAG{path_traversal_dot_dot_slash}', hint_text='../ can escape the intended directory.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{path_traversal_dot_dot_slash}', hint_text='在URL或参数中尝试 ../../../', hint_order=2),
+        DBCTFHint(flag_key='FLAG{xxe_is_still_relevant}', hint_text='XML parsers can be tricked.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{xxe_is_still_relevant}', hint_text="搜索'XXE payload'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{ssrf_is_the_sleeper_threat}', hint_text='Server-Side Request Forgery.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{ssrf_is_the_sleeper_threat}', hint_text='在URL参数中传入 http://127.0.0.1:8000', hint_order=2),
+        DBCTFHint(flag_key='FLAG{deserialization_is_dangerous}', hint_text='Unsafe deserialization = RCE.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{deserialization_is_dangerous}', hint_text="搜索'Python pickle RCE'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{jwt_none_algorithm_attack}', hint_text='Some JWT libraries accept alg:none.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{jwt_none_algorithm_attack}', hint_text='jwt.io → 改header→ {\"alg\":\"none\"}', hint_order=2),
+        DBCTFHint(flag_key='FLAG{timing_attack_is_subtle}', hint_text='Response time can leak information.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{timing_attack_is_subtle}', hint_text='测量不同输入的响应时间', hint_order=2),
+        DBCTFHint(flag_key='FLAG{steganography_in_images}', hint_text='Images can hide data.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{steganography_in_images}', hint_text='下载图片→用 steghide 或 strings 检查', hint_order=2),
+        DBCTFHint(flag_key='FLAG{strings_command_is_powerful}', hint_text='strings extracts readable text from binaries.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{strings_command_is_powerful}', hint_text='strings filename | grep FLAG', hint_order=2),
+        DBCTFHint(flag_key='FLAG{metafile_data_leaks}', hint_text='Photos carry GPS, camera, and timestamp data.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{metafile_data_leaks}', hint_text='exiftool image.jpg', hint_order=2),
+        DBCTFHint(flag_key='FLAG{git_exposed_dot_git}', hint_text='Exposed .git directories leak source code.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{git_exposed_dot_git}', hint_text='访问 /.git/config', hint_order=2),
+        DBCTFHint(flag_key='FLAG{env_file_leaked}', hint_text='.env files contain secrets.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{env_file_leaked}', hint_text='访问 /.env', hint_order=2),
+        DBCTFHint(flag_key='FLAG{dockerfile_tells_the_stack}', hint_text='Dockerfiles reveal the infrastructure.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{dockerfile_tells_the_stack}', hint_text='访问 /Dockerfile', hint_order=2),
+        DBCTFHint(flag_key='FLAG{cors_misconfiguration}', hint_text='CORS: Access-Control-Allow-Origin: * is dangerous.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{cors_misconfiguration}', hint_text='F12→检查响应头 Access-Control-*', hint_order=2),
+        DBCTFHint(flag_key='FLAG{clickjacking_missing_xframe}', hint_text='Without X-Frame-Options, site can be iframed.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{clickjacking_missing_xframe}', hint_text='检查响应头是否有 X-Frame-Options', hint_order=2),
+        DBCTFHint(flag_key='FLAG{csp_is_not_configured}', hint_text='Content-Security-Policy prevents XSS.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{csp_is_not_configured}', hint_text='检查响应头 CSP', hint_order=2),
+        DBCTFHint(flag_key='FLAG{hsts_missing}', hint_text='HSTS forces HTTPS.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{hsts_missing}', hint_text='检查响应头 Strict-Transport-Security', hint_order=2),
+        DBCTFHint(flag_key='FLAG{caesar_cipher_is_ancient}', hint_text='Shift each letter by a fixed amount.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{caesar_cipher_is_ancient}', hint_text="搜索'Caesar cipher decoder'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{aes_ecb_penguin}', hint_text='ECB mode leaks patterns.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{aes_ecb_penguin}', hint_text='研究 AES ECB vs CBC 模式', hint_order=2),
+        DBCTFHint(flag_key='FLAG{padding_oracle_is_classic}', hint_text='Padding Oracle lets you decrypt without the key.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{padding_oracle_is_classic}', hint_text="搜索'Padding Oracle attack explained'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{length_extension_attack}', hint_text='Merkle-Damgard hash construction has this flaw.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{length_extension_attack}', hint_text="搜索'hash length extension attack'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{rsa_wiener_attack}', hint_text='Small private exponent d = vulnerable.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{rsa_wiener_attack}', hint_text="搜索'RSA Wiener attack'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{bleichenbacher_oracle}', hint_text='The million message attack.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{bleichenbacher_oracle}', hint_text="搜索'Bleichenbacher attack'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{buffer_overflow_in_the_wild}', hint_text='Overflow the buffer → control execution flow.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{buffer_overflow_in_the_wild}', hint_text="搜索'buffer overflow for beginners'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{format_string_is_powerful}', hint_text='printf without format specifier is dangerous.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{format_string_is_powerful}', hint_text="搜索'format string vulnerability'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{ret2libc_is_a_technique}', hint_text="When you can't execute shellcode, use existing code.", hint_order=1),
+        DBCTFHint(flag_key='FLAG{ret2libc_is_a_technique}', hint_text="搜索'ret2libc attack'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{rop_chains_are_art}', hint_text='Chain gadgets together to execute arbitrary code.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{rop_chains_are_art}', hint_text="搜索'ROP chain tutorial'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{heap_exploitation_basics}', hint_text='Heap bugs are harder but more rewarding.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{heap_exploitation_basics}', hint_text="搜索'heap exploitation basics'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{race_condition_toctou}', hint_text='Between check and use, things can change.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{race_condition_toctou}', hint_text="搜索'TOCTOU race condition'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{dns_rebinding_attack}', hint_text='DNS rebinding bypasses same-origin policy.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{dns_rebinding_attack}', hint_text="搜索'DNS rebinding attack'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{prototype_pollution_in_js}', hint_text='JavaScript objects inherit from prototypes.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{prototype_pollution_in_js}', hint_text="搜索'prototype pollution'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{oauth2_misconfiguration}', hint_text='OAuth flow has many edge cases.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{oauth2_misconfiguration}', hint_text="搜索'OAuth2 redirect_uri bypass'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{saml_bypass_via_comment}', hint_text='SAML relies on XML — which has comments.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{saml_bypass_via_comment}', hint_text="搜索'SAML XML comment injection'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{graphql_introspection_enabled}', hint_text='Introspection reveals the entire API schema.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{graphql_introspection_enabled}', hint_text="搜索'GraphQL introspection attack'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{http_request_smuggling}', hint_text='Frontend and backend parse requests differently.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{http_request_smuggling}', hint_text="搜索'HTTP request smuggling'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{websocket_hijacking}', hint_text='WebSocket without origin check = hijackable.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{websocket_hijacking}', hint_text='检查WebSocket连接的Origin头', hint_order=2),
+        DBCTFHint(flag_key='FLAG{subdomain_takeover_potential}', hint_text='Dead DNS records point to services you can claim.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{subdomain_takeover_potential}', hint_text="搜索'subdomain takeover'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{shodan_is_your_eye}', hint_text='Shodan indexes internet-connected devices.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{shodan_is_your_eye}', hint_text='shodan.io 搜索你的IP', hint_order=2),
+        DBCTFHint(flag_key='FLAG{zero_day_is_a_mindset}', hint_text='A zero-day is just a bug nobody found yet.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{zero_day_is_a_mindset}', hint_text='阅读CVE数据库和PoC代码', hint_order=2),
+        DBCTFHint(flag_key='FLAG{fuzzing_finds_bugs}', hint_text='Random input → unexpected behavior → bugs.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{fuzzing_finds_bugs}', hint_text="搜索'fuzzing with AFL tutorial'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{symbolic_execution_is_magic}', hint_text='Symbolic execution solves constraints automatically.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{symbolic_execution_is_magic}', hint_text="搜索'angr CTF tutorial'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{return_oriented_shellcode}', hint_text='Build a chain: ROP → mprotect → shellcode.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{return_oriented_shellcode}', hint_text="搜索'ROP to shellcode chain'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{kernel_exploitation_101}', hint_text='Kernel bugs = full system control.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{kernel_exploitation_101}', hint_text="搜索'kernel exploitation basics'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{side_channel_is_stealthy}', hint_text='The computer itself leaks secrets.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{side_channel_is_stealthy}', hint_text="搜索'side-channel attack explained'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{cache_timing_is_real}', hint_text='CPU cache timing can leak memory content.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{cache_timing_is_real}', hint_text="搜索'Meltdown and Spectre explained'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{quantum_crypto_is_coming}', hint_text='Quantum computers will break RSA and ECC.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{quantum_crypto_is_coming}', hint_text="搜索'shor algorithm and post-quantum'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{blockchain_smart_contract_bugs}', hint_text='Smart contract bugs = free money for hackers.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{blockchain_smart_contract_bugs}', hint_text="搜索'reentrancy attack ethereum'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{reverse_engineering_is_an_art}', hint_text='Reverse engineering reveals how programs work.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{reverse_engineering_is_an_art}', hint_text='下载Ghidra，分析一个简单程序', hint_order=2),
+        DBCTFHint(flag_key='FLAG{code_audit_is_essential}', hint_text='Manual code review finds what tools miss.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{code_audit_is_essential}', hint_text='学习OWASP Code Review Guide', hint_order=2),
+        DBCTFHint(flag_key='FLAG{threat_modeling_is_proactive}', hint_text='Think like an attacker before you code.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{threat_modeling_is_proactive}', hint_text="搜索'STRIDE threat modeling'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{red_team_is_the_ultimate_test}', hint_text='Red team = full-scope adversarial simulation.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{red_team_is_the_ultimate_test}', hint_text="搜索'red team operations guide'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{pwn_college_is_a_thing}', hint_text='Free binary exploitation education.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{pwn_college_is_a_thing}', hint_text='访问 pwn.college', hint_order=2),
+        DBCTFHint(flag_key='FLAG{hackthebox_is_your_playground}', hint_text='Real machines, real challenges.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{hackthebox_is_your_playground}', hint_text='访问 hackthebox.com', hint_order=2),
+        DBCTFHint(flag_key='FLAG{you_are_a_real_hacker_now}', hint_text='This is the ultimate achievement.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{you_are_a_real_hacker_now}', hint_text='集齐前90个flag', hint_order=2),
+        DBCTFHint(flag_key='FLAG{the_42nd_challenge}', hint_text='The answer to life, the universe, and everything.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{the_42nd_challenge}', hint_text='键盘输入 4 然后 2', hint_order=2),
+        DBCTFHint(flag_key='FLAG{full_chain_exploitation}', hint_text='The complete attack lifecycle.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{full_chain_exploitation}', hint_text='研究Cyber Kill Chain模型', hint_order=2),
+        DBCTFHint(flag_key='FLAG{responsible_disclosure_is_key}', hint_text='With great power comes great responsibility.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{responsible_disclosure_is_key}', hint_text="搜索'responsible disclosure policy'", hint_order=2),
+        DBCTFHint(flag_key='FLAG{every_expert_was_once_a_beginner}', hint_text='Remember where you started.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{every_expert_was_once_a_beginner}', hint_text='CTF的旅途，从第一道题开始', hint_order=2),
+        DBCTFHint(flag_key='FLAG{sharing_knowledge_is_the_way}', hint_text='Teaching others deepens your understanding.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{sharing_knowledge_is_the_way}', hint_text='写一篇CTF writeup并发布', hint_order=2),
+        DBCTFHint(flag_key='FLAG{white_hat_is_a_lifestyle}', hint_text="Security is not a product, it's a process.", hint_order=1),
+        DBCTFHint(flag_key='FLAG{white_hat_is_a_lifestyle}', hint_text='参与Bug Bounty或安全社区', hint_order=2),
+        DBCTFHint(flag_key='FLAG{bug_bounty_is_waiting}', hint_text='Companies will pay you to find bugs.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{bug_bounty_is_waiting}', hint_text='访问 hackerone.com', hint_order=2),
+        DBCTFHint(flag_key='FLAG{the_learning_never_stops}', hint_text='Technology evolves, so should you.', hint_order=1),
+        DBCTFHint(flag_key='FLAG{the_learning_never_stops}', hint_text='订阅安全博客和CVE feeds', hint_order=2),
+        DBCTFHint(flag_key='FLAG{the_final_boss_defeated}', hint_text='CONGRATULATIONS! You are a TRUE White Hat!', hint_order=1),
+        DBCTFHint(flag_key='FLAG{the_final_boss_defeated}', hint_text='全部100题完成！你是真正的白客！', hint_order=2),
     ]
-    for h in hints:
-        db.add(h)
+    for h in hints: db.add(h)
     db.commit()
 
-# robots.txt — 白客第一课
+
 @app.get("/robots.txt", include_in_schema=False)
 def robots_txt():
     return Response(content="""User-agent: *
@@ -1466,6 +1743,131 @@ def ctf_hint(flag_key: str, db: Session = Depends(get_db)):
     if not hints:
         return {"hints": ["这个flag没有额外的提示，靠你自己了！"]}
     return {"hints": [h.hint_text for h in hints]}
+
+
+# ════════════════════════════════════════════════
+# 🕵️ Extra CTF hidden endpoints for 100 challenges
+# ════════════════════════════════════════════════
+
+@app.get("/api/v1/ctf/challenge/{flag_id}", include_in_schema=False)
+def ctf_challenge_detail(flag_id: str, db: Session = Depends(get_db)):
+    fl = db.query(DBCTFFlag).filter(DBCTFFlag.flag_key == flag_id).first()
+    if not fl: raise HTTPException(status_code=404)
+    return {"title": fl.title, "description": fl.description, "points": fl.points, "difficulty": fl.difficulty, "found": bool(fl.found_by)}
+
+# Base64 challenge response
+@app.get("/api/v1/ctf/base64-challenge", include_in_schema=False)
+def ctf_base64():
+    return {"encoded": "Q29uZ3JhdHVsYXRpb25zISBZb3UgZm91bmQgaXQh", "hint": "base64 -d", "flag_format": "FLAG{...}"}
+
+# XOR challenge endpoint
+@app.get("/api/v1/ctf/xor-challenge", include_in_schema=False)
+def ctf_xor():
+    return {"encrypted": "2c0700170b1316591f131f561c0a1c0f561918131e031f570e", "hint": "Single-byte XOR. Key is 0x7a", "key": "0x7a"}
+
+# ROT13 endpoint
+@app.get("/api/v1/ctf/rot13-challenge", include_in_schema=False)
+def ctf_rot13():
+    return {"encoded": "SYNT{sbg13_vf_gur_bevtvany_pelcgb}", "hint": "ROT13 — rotate by 13"}
+
+# Morse challenge
+@app.get("/api/v1/ctf/morse-challenge", include_in_schema=False)
+def ctf_morse():
+    return {"morse": "..-. .-.. .- --. -.--. -- --- .-. ... . ..--.- -.-. --- -.. . ..--.- .. ... ..--.- -.-. .-.. .- ... ... .. -.-. -.--.-", "hint": "Morse code decoder online"}
+
+# Vigenere challenge
+@app.get("/api/v1/ctf/vigenere-challenge", include_in_schema=False)
+def ctf_vigenere():
+    return {"ciphertext": "WFNX{iphertb_fv_phnfprn_wnnqk}", "key": "RIN", "hint": "Vigenere cipher with key 'RIN'"}
+
+# Caesar challenge
+@app.get("/api/v1/ctf/caesar-challenge", include_in_schema=False)
+def ctf_caesar():
+    return {"ciphertext": "WKHENQ_BRFHVDU_BLSKHU_CL_DQFLHQW", "hint": "Shift by 3 (Caesar's favorite)", "shift": 3}
+
+# JWT debug endpoint (shows token but in safe way)
+@app.get("/api/v1/ctf/jwt-debug", include_in_schema=False)
+def ctf_jwt():
+    return {"hint": "JWT tokens are in the X-GP-Token header. Grab one and decode it at jwt.io", "structure": "header.payload.signature", "common_attacks": ["none algorithm", "weak HMAC secret", "expired token reuse"]}
+
+# Hidden leaderboard endpoint
+@app.get("/api/v1/ctf/leaderboard", include_in_schema=False)
+def ctf_leaderboard(db: Session = Depends(get_db)):
+    flags = db.query(DBCTFFlag).filter(DBCTFFlag.found_by.isnot(None)).all()
+    if not flags: return {"players": [], "message": "No flags found yet! Be the first!"}
+    players = {}
+    for fl in flags:
+        if fl.found_by not in players: players[fl.found_by] = {"name": fl.found_by, "total_points": 0, "flags_found": 0}
+        players[fl.found_by]["total_points"] += fl.points
+        players[fl.found_by]["flags_found"] += 1
+    return {"players": sorted(players.values(), key=lambda x: x["total_points"], reverse=True)}
+
+# Fake admin panel (further CTF bait)
+@app.get("/admin-panel", include_in_schema=False)
+def fake_admin_panel():
+    return HTMLResponse(content="""<!DOCTYPE html><html><head><title>Admin Panel</title>
+<style>body{background:#000;color:#0f0;font-family:monospace;padding:40px}h1{color:red}input{padding:8px;margin:5px;border:1px solid #0f0;background:#000;color:#0f0}</style></head><body>
+<h1>⚠️ Restricted Access</h1><p>Username: <input disabled value='admin'></p><p>Password: <input type='password'></p>
+<button onclick="alert('Nice try! This is a CTF training page.\\\\n\\\\nTry the real admin at /admin')">Login</button>
+<!-- FLAG{hidden_in_plain_sight} — sometimes the flag is exactly where you would look -->
+<!-- Next hint: check /api/v1/ctf/leaderboard --></body></html>""")
+
+# Old backup endpoint
+@app.get("/backup.tar.gz", include_in_schema=False)
+def fake_tarball():
+    return Response(content="FLAG{backup_files_are_dangerous}\n\nAlways check for common backup file extensions:\n  .bak .old .backup .zip .tar.gz .sql .swp ~\n\nNext: try /.env or /.git/config", media_type="text/plain")
+
+@app.get("/.env", include_in_schema=False)
+def fake_env():
+    return PlainTextResponse("""# Application Environment Config
+# FLAG{env_file_leaked} — NEVER commit .env files!
+
+DB_HOST=localhost
+DB_NAME=family_fund
+DB_USER=admin
+DB_PASS=SuperSecret123  # (this is fake, don't try it)
+SECRET_KEY=FLAG_GOES_HERE
+API_TOKEN=not_a_real_token_obviously
+
+# Next challenge: try /.git/config
+""")
+
+@app.get("/.git/HEAD", include_in_schema=False)
+def fake_git():
+    return PlainTextResponse("ref: refs/heads/main\n\nFLAG{git_exposed_dot_git}\n\n.git directories should NEVER be web-accessible!\nUse a proper deployment pipeline instead.\n\nNext: try /Dockerfile")
+
+@app.get("/Dockerfile", include_in_schema=False)
+def fake_dockerfile():
+    return PlainTextResponse("""FROM python:3.12-slim
+WORKDIR /app
+COPY . .
+RUN pip install -r requirements.txt
+# FLAG{dockerfile_tells_the_stack}
+# Always use .dockerignore to exclude sensitive files!
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+EXPOSE 8000
+# Next: check robots.txt for more hidden paths
+""")
+
+# Status endpoint with timing (for timing attack challenge)
+@app.get("/api/v1/ctf/timing-test/{user}", include_in_schema=False)
+def ctf_timing(user: str):
+    import time as _t
+    if user == "admin":
+        _t.sleep(0.5)  # Simulate DB lookup
+        return {"valid": True}
+    _t.sleep(0.01)
+    return {"valid": False}
+
+# CTF search API
+@app.get("/api/v1/ctf/search", include_in_schema=False)
+def ctf_search(q: str = "", difficulty: str = "", category: str = "", db: Session = Depends(get_db)):
+    _ensure_ctf_seeds(db)
+    query = db.query(DBCTFFlag)
+    if q: query = query.filter(DBCTFFlag.title.contains(q) | DBCTFFlag.description.contains(q))
+    if difficulty: query = query.filter(DBCTFFlag.difficulty == difficulty)
+    flags = query.all()
+    return {"results": [{"title": f.title, "points": f.points, "difficulty": f.difficulty, "found": bool(f.found_by), "desc": f.description} for f in flags]}
 
 
 # ==========================================

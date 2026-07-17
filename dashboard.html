@@ -466,40 +466,47 @@
                     </div>
                 </div>
             
-        <!-- 🕵️ 白客渗透挑战台 -->
+        <!-- 🕵️ 白客渗透挑战台 · 100题 -->
         <div v-if="isAuthenticated" class="border border-green-700 rounded-lg p-6 bg-gray-900 shadow-lg relative overflow-hidden">
-            <div class="absolute top-0 right-0 bg-green-600 text-xs font-bold px-2 py-1 rounded-bl text-white tracking-widest">CTF</div>
-            <h3 class="text-lg text-green-400 font-bold mb-2 flex items-center gap-2">
-                🕵️ 白客训练场 · 渗透挑战
-                <span v-if="ctfFound > 0" class="text-xs bg-green-900/50 border border-green-700 px-2 py-1 rounded text-green-400">🏆 {{ ctfFound }}/{{ ctfTotal }} · {{ ctfScore }}分</span>
-            </h3>
-            <p class="text-xs text-gray-500 mb-3">提示：善用开发者工具(F12)、查看源码、检查网络请求。</p>
+            <div class="absolute top-0 right-0 bg-green-600 text-xs font-bold px-2 py-1 rounded-bl text-white tracking-widest">CTF×100</div>
+            <h3 class="text-lg text-green-400 font-bold mb-1 flex items-center gap-2">🕵️ 白客训练场 · 渗透挑战</h3>
+            <p class="text-xs text-gray-500 mb-2">🔍 F12开发者工具 · 查看源码 · 检查网络 · Flag格式: FLAG{...}</p>
 
-            <!-- Flag提交框 -->
-            <form @submit.prevent="submitCtfFlag" class="flex gap-2 mb-3">
-                <input v-model="ctfInput" type="text" placeholder="FLAG{...}"
-                       class="flex-1 bg-black border border-green-700/50 rounded px-3 py-2 text-green-400 font-mono text-sm focus:outline-none focus:border-green-500 placeholder-gray-600">
-                <button type="submit" :disabled="ctfSubmitting" class="bg-green-700 hover:bg-green-600 text-white font-bold px-4 py-2 rounded text-sm transition disabled:opacity-50">提交</button>
-            </form>
-            <div v-if="ctfResult" class="text-xs mb-3 px-3 py-2 rounded" :class="ctfResult.status === 'success' ? 'bg-green-900/30 text-green-400 border border-green-700' : 'bg-red-900/30 text-red-400 border border-red-700'">{{ ctfResult.message }}</div>
-
-            <!-- 进度条 -->
-            <div class="w-full bg-gray-800 rounded-full h-2 mb-3 border border-gray-700 overflow-hidden">
-                <div class="bg-gradient-to-r from-green-600 to-emerald-400 h-full rounded-full transition-all duration-700" :style="'width:'+(ctfFound/ctfTotal*100)+'%'"></div>
+            <!-- 统计 + 进度条 -->
+            <div class="flex items-center gap-3 mb-2">
+                <span class="text-xs text-green-400 font-bold">{{ ctfFound }}/{{ ctfTotal }} · {{ ctfScore }}分</span>
+                <div class="flex-1 bg-gray-800 rounded-full h-2 border border-gray-700 overflow-hidden">
+                    <div class="bg-gradient-to-r from-green-600 to-emerald-400 h-full rounded-full transition-all duration-700" :style="'width:'+(ctfFound/ctfTotal*100)+'%'"></div>
+                </div>
             </div>
 
-            <!-- Flag列表 -->
-            <div class="space-y-1 max-h-80 overflow-y-auto pr-1">
-                <div v-for="f in ctfFlags" :key="f.title" class="flex items-center justify-between text-xs p-2 rounded border" :class="f.found ? 'bg-green-900/20 border-green-800/50' : 'bg-black/30 border-gray-800'">
-                    <div class="flex items-center gap-2 flex-1 min-w-0">
-                        <span>{{ f.found ? '✅' : '🔒' }}</span>
+            <!-- Flag提交 -->
+            <form @submit.prevent="submitCtfFlag" class="flex gap-2 mb-2">
+                <input v-model="ctfInput" type="text" placeholder="FLAG{...}" class="flex-1 bg-black border border-green-700/50 rounded px-3 py-1.5 text-green-400 font-mono text-xs focus:outline-none focus:border-green-500 placeholder-gray-600">
+                <button type="submit" :disabled="ctfSubmitting" class="bg-green-700 hover:bg-green-600 text-white font-bold px-3 py-1.5 rounded text-xs transition disabled:opacity-50">提交</button>
+            </form>
+            <div v-if="ctfResult" class="text-xs mb-2 px-2 py-1 rounded" :class="ctfResult.status==='success'?'bg-green-900/30 text-green-400 border border-green-700':ctfResult.status==='already_found'?'bg-yellow-900/30 text-yellow-400 border border-yellow-700':'bg-red-900/30 text-red-400 border border-red-700'">{{ ctfResult.message }}</div>
+
+            <!-- 搜索筛选 -->
+            <div class="flex gap-1.5 mb-2 flex-wrap">
+                <input v-model="ctfFilter" type="text" placeholder="🔍 搜索100题..." class="flex-1 min-w-[80px] bg-black border border-gray-700 rounded px-2 py-1 text-white text-[11px] focus:outline-none focus:border-green-500 placeholder-gray-600">
+                <select v-model="ctfDiffFilter" class="bg-black border border-gray-700 rounded px-1.5 py-1 text-white text-[11px] focus:outline-none"><option value="">难度</option><option value="tutorial">入门</option><option value="easy">初级</option><option value="medium">中级</option><option value="hard">高级</option><option value="expert">专家</option><option value="legendary">传说</option></select>
+                <select v-model="ctfShowFound" class="bg-black border border-gray-700 rounded px-1.5 py-1 text-white text-[11px] focus:outline-none"><option value="all">全部</option><option value="unfound">🔒</option><option value="found">✅</option></select>
+            </div>
+
+            <!-- 题目列表 -->
+            <div class="space-y-0.5 max-h-80 overflow-y-auto pr-1">
+                <div v-for="f in filteredCtfFlags" :key="f.title" class="flex items-center justify-between text-[11px] p-1.5 rounded border" :class="f.found ? 'bg-green-900/20 border-green-800/50' : 'bg-black/30 border-gray-800'">
+                    <div class="flex items-center gap-1.5 flex-1 min-w-0">
+                        <span class="text-xs">{{ f.found ? '✅' : '🔒' }}</span>
                         <span :class="f.found ? 'text-green-400 line-through' : 'text-gray-400'">{{ f.title }}</span>
-                        <span class="text-gray-600">(+{{ f.points }}分)</span>
-                        <span class="px-1.5 py-0.5 rounded text-[10px]" :class="f.difficulty === 'easy' ? 'bg-green-900/50 text-green-500' : f.difficulty === 'medium' ? 'bg-yellow-900/50 text-yellow-500' : f.difficulty === 'hard' ? 'bg-red-900/50 text-red-500' : 'bg-purple-900/50 text-purple-400'">{{ f.difficulty }}</span>
+                        <span class="text-gray-600 text-[9px]">+{{ f.points }}</span>
+                        <span class="px-1 py-0.5 rounded text-[8px] font-mono" :class="{'tutorial':'bg-gray-700 text-gray-300','easy':'bg-green-900/50 text-green-400','medium':'bg-yellow-900/50 text-yellow-400','hard':'bg-red-900/50 text-red-400','expert':'bg-purple-900/50 text-purple-300','legendary':'bg-amber-900/50 text-amber-300'}[f.difficulty]">{{ {tutorial:'入门',easy:'初级',medium:'中级',hard:'高级',expert:'专家',legendary:'传说'}[f.difficulty] }}</span>
                     </div>
-                    <button v-if="!f.found" @click="getCtfHint(f.title)" class="text-blue-400 hover:text-blue-300 text-xs border border-blue-800/50 px-2 py-0.5 rounded transition">💡提示</button>
-                    <span v-else class="text-gray-600 text-xs">{{ f.found_at }}</span>
+                    <button v-if="!f.found" @click="getCtfHint(f.title)" class="text-blue-400 hover:text-blue-300 text-[10px] border border-blue-800/50 px-1.5 py-0.5 rounded transition flex-shrink-0">💡</button>
+                    <span v-else class="text-gray-600 text-[9px] flex-shrink-0 ml-1">{{ f.found_at }}</span>
                 </div>
+                <div v-if="filteredCtfFlags.length===0" class="text-center text-gray-600 text-xs py-8">没有匹配的题目 🔍</div>
             </div>
         </div>
 </div>
@@ -907,7 +914,7 @@
 
     console.log('%c🐬 提示：试试在页面上直接输入 42', 'color:#f472b6;font-size:11px;');
 
-    const { createApp, ref, onMounted, onUnmounted } = Vue
+    const { createApp, ref, onMounted, onUnmounted, computed } = Vue
     createApp({
         setup() {
             const API_BASE = '/api/v1';
@@ -1040,8 +1047,20 @@
             const ctfSubmitting = ref(false);
             const ctfFlags = ref([]);
             const ctfFound = ref(0);
-            const ctfTotal = ref(11);
+            const ctfTotal = ref(100);
             const ctfScore = ref(0);
+            const ctfMaxScore = ref(0);
+            const ctfFilter = ref('');
+            const ctfDiffFilter = ref('');
+            const ctfShowFound = ref('all');
+            const filteredCtfFlags = computed(() => {
+                let f = ctfFlags.value;
+                if (ctfFilter.value) { const q = ctfFilter.value.toLowerCase(); f = f.filter(x => x.title.toLowerCase().includes(q)); }
+                if (ctfDiffFilter.value) f = f.filter(x => x.difficulty === ctfDiffFilter.value);
+                if (ctfShowFound.value === 'found') f = f.filter(x => x.found);
+                if (ctfShowFound.value === 'unfound') f = f.filter(x => !x.found);
+                return f;
+            });
 
             const fetchCtfStatus = async () => {
                 try {
@@ -1049,6 +1068,7 @@
                     if (res.ok) {
                         const d = await res.json();
                         ctfFlags.value = d.flags;
+                        ctfMaxScore.value = d.max_points || 900;
                         ctfFound.value = d.found;
                         ctfTotal.value = d.total;
                         ctfScore.value = d.total_points;
@@ -1731,7 +1751,7 @@
                 navDisplay, navMood, clickNav, isAuthenticated, showAuthModal, pinInput, verifyPin, closeAuthModal, logout, initiateCall,
                 showEncourage, encourageText, nextEncourage, fortuneText, showFortune, drawFortune,
                 luckyActive, drawCount, specialDayText,
-                ctfInput, ctfResult, ctfSubmitting, ctfFlags, ctfFound, ctfTotal, ctfScore, submitCtfFlag, getCtfHint, fetchCtfStatus,
+                ctfInput, ctfResult, ctfSubmitting, ctfFlags, ctfFound, ctfTotal, ctfScore, ctfMaxScore, ctfFilter, ctfDiffFilter, ctfShowFound, filteredCtfFlags, submitCtfFlag, getCtfHint, fetchCtfStatus,
                 showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall,
                 lottery, doLotteryDraw,
                 form, alphaForm, fileInput, msgInput, msgFileInput, selectedMessageFile, messages, myRequests,
