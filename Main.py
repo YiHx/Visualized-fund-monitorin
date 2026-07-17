@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, Form, status, WebSocket, WebSocketDisconnect, Header
+from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, Form, status, WebSocket, WebSocketDisconnect, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -550,8 +550,8 @@ def _parse_cose_key(cose_bytes: bytes) -> dict:
 
 def _webauthn_verify_assertion(credential_id: str, authenticator_data: bytes, client_data_json: str, signature_b64: str) -> bool:
     """验证 WebAuthn assertion 签名"""
-    cred = __import__('sys').modules[__name__]
-    db = cred.SessionLocal()
+    global SessionLocal
+    db = SessionLocal()
     try:
         rec = db.query(DBWebAuthnCred).filter(DBWebAuthnCred.credential_id == credential_id).first()
         if not rec: return False
