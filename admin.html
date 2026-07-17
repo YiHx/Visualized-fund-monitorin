@@ -60,6 +60,7 @@
                 <div class="mt-4 flex gap-3 justify-center">
                     <button @click="authStep = 'pin'" class="text-gray-400 hover:text-white text-sm underline transition">🔑 使用密码登录</button>
                     <button @click="enrollFingerprint" class="text-gray-500 hover:text-gray-400 text-sm underline transition">🔄 重新注册</button>
+                    <button @click="resetFingerprint" class="text-red-600 hover:text-red-400 text-sm underline transition">🗑 重置指纹</button>
                 </div>
             </div>
 
@@ -632,6 +633,7 @@
                     const cred = await navigator.credentials.get({
                         publicKey: {
                             challenge: new Uint8Array(32), timeout: 60000,
+                            rpId: window.location.hostname,
                             allowCredentials: allowCreds, userVerification: 'preferred'
                         }
                     });
@@ -665,6 +667,14 @@
             };
 
             const enrollFingerprint = () => { authStep.value = 'enroll'; pinInput.value = ''; authError.value = ''; };
+
+            const resetFingerprint = async () => {
+                if (!confirm('确定清除所有已注册的指纹凭证吗？')) return;
+                try {
+                    const res = await fetch(`${API_BASE}/gp/webauthn/reset`, { method: 'POST' });
+                    if (res.ok) { webauthnReady.value = false; authStep.value = 'pin'; alert('指纹已清除，请重新注册。'); }
+                } catch(e) {}
+            };
 
             // ───── 视频通话状态 ─────
             const incomingCall = ref(null);
@@ -1321,7 +1331,7 @@
                 document.removeEventListener('visibilitychange', restartPolling);
                 if (recoveredBannerTimer) clearTimeout(recoveredBannerTimer);
             });
-            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, notificationLogs, onlyFailedLogs, retryingLogId, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, retryNotification, replyMsg, isImageFileAdmin, isVideoFileAdmin, openMediaModalAdmin, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown, isAuthenticated, pinInput, authError, authLoading, authStep, webauthnReady, checkWebauthnReady, doFingerprintAuth, startFingerprint, doEnrollFingerprint, enrollFingerprint, verifyPin, logout, incomingCall, showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall, acceptIncomingCall, declineIncomingCall, currentQuote, quoteGlow, nextQuote, lottoConfig, lottoStats, lottoForm, lottoProb, fetchLottoConfig, fetchLottoStats, lotteryUpdateCost, lotteryToggleEnabled, lotteryTogglePrize, lotteryDeletePrize, lotteryAddPrize, lotteryResetRecords }
+            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, notificationLogs, onlyFailedLogs, retryingLogId, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, retryNotification, replyMsg, isImageFileAdmin, isVideoFileAdmin, openMediaModalAdmin, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown, isAuthenticated, pinInput, authError, authLoading, authStep, webauthnReady, checkWebauthnReady, doFingerprintAuth, startFingerprint, doEnrollFingerprint, enrollFingerprint, resetFingerprint, verifyPin, logout, incomingCall, showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall, acceptIncomingCall, declineIncomingCall, currentQuote, quoteGlow, nextQuote, lottoConfig, lottoStats, lottoForm, lottoProb, fetchLottoConfig, fetchLottoStats, lotteryUpdateCost, lotteryToggleEnabled, lotteryTogglePrize, lotteryDeletePrize, lotteryAddPrize, lotteryResetRecords }
         }
     }).mount('#admin-app')
 </script>

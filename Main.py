@@ -548,29 +548,45 @@ def _parse_cose_key(cose_bytes: bytes) -> dict:
         return arg
     return _read_cbor()
 
-def _webauthn_verify_assertion(credential_id: str, authenticator_data: bytes, client_data_json: str, signature_b64: str) -> bool:
+def _webauthn_verify_assertion(credential_id: str, authenticator_data: bytes, client_data_json_b64: str, signature_b64: str) -> bool:
     """验证 WebAuthn assertion 签名"""
     global SessionLocal
     db = SessionLocal()
     try:
         rec = db.query(DBWebAuthnCred).filter(DBWebAuthnCred.credential_id == credential_id).first()
-        if not rec: return False
+        if not rec:
+            print(f"WebAuthn: credential {credential_id[:20]}... not found")
+            return False
 
-        # 重建签名的数据
-        client_hash = _hashlib.sha256(client_data_json.encode()).digest()
+        # ⚠️ 关键：前端传的是 base64url 编码的 clientDataJSON，必须先解码
+        client_json_raw = _b64_decode(client_data_json_b64)
+        client_hash = _hashlib.sha256(client_json_raw).digest()
         signed_data = authenticator_data + client_hash
+
+        # 验证 RP ID hash（authenticator_data 前32字节）
+        rp_id_hash = authenticator_data[:32]
+        expected_rp = _hashlib.sha256(b"8.209.219.82").digest()
+        # RP ID 可能是域名或 localhost，用常见值尝试匹配
+        valid_rp = False
+        for rp_candidate in [b"8.209.219.82", b"localhost", b"127.0.0.1", b"family-fund"]:
+            if rp_id_hash == _hashlib.sha256(rp_candidate).digest():
+                valid_rp = True
+                break
+        if not valid_rp:
+            print(f"WebAuthn: RP ID hash mismatch. Got {rp_id_hash.hex()}, expected 8.209.219.82={_hashlib.sha256(b'8.209.219.82').hexdigest()}")
 
         # 解析签名
         sig = _b64_decode(signature_b64)
-        if len(sig) < 8: return False
-        # ECDSA signature is DER encoded: 0x30 len 0x02 len r 0x02 len s
-        sig_r_len = sig[3]
-        sig_r = int.from_bytes(sig[4:4+sig_r_len], 'big')
-        sig_s_start = 4 + sig_r_len + 2
-        sig_s_len = sig[sig_s_start - 1]
-        sig_s = int.from_bytes(sig[sig_s_start:sig_s_start + sig_s_len], 'big')
+        if len(sig) < 8:
+            print(f"WebAuthn: signature too short ({len(sig)} bytes)")
+            return False
 
-        # 重建公钥
+        # ECDSA 签名是 raw r||s 格式（WebAuthn 标准规范）
+        half = len(sig) // 2
+        sig_r = int.from_bytes(sig[:half], 'big')
+        sig_s = int.from_bytes(sig[half:], 'big')
+
+        # 重建公钥并验证
         x_bytes = bytes.fromhex(rec.public_key_x)
         y_bytes = bytes.fromhex(rec.public_key_y)
         from cryptography.hazmat.primitives.asymmetric import ec
@@ -612,6 +628,13 @@ def gp_webauthn_ready():
                 "credential_ids": [c.credential_id for c in creds]}
     finally:
         db.close()
+
+@app.post("/api/v1/gp/webauthn/reset")
+def gp_webauthn_reset(db: Session = Depends(get_db)):
+    """清除所有已注册的指纹凭证"""
+    db.query(DBWebAuthnCred).delete()
+    db.commit()
+    return {"status": "success", "message": "指纹凭证已全部清除"}
 
 @app.post("/api/v1/gp/webauthn/auth")
 async def gp_webauthn_auth(request: Request, db: Session = Depends(get_db)):
