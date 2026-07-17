@@ -47,7 +47,7 @@ from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, Form, sta
 #
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
@@ -179,6 +179,26 @@ class DBWebAuthnCred(Base):
     created_at = Column(DateTime, default=datetime.now)
 
 
+
+# ── 白客CTF系统模型 ────────────────────────────
+class DBCTFFlag(Base):
+    __tablename__ = "ctf_flags"
+    id = Column(Integer, primary_key=True, index=True)
+    flag_key = Column(String, unique=True, nullable=False)
+    title = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    points = Column(Integer, nullable=False, default=10)
+    difficulty = Column(String, nullable=False, default="easy")
+    found_by = Column(String, nullable=True)
+    found_at = Column(DateTime, nullable=True)
+
+class DBCTFHint(Base):
+    __tablename__ = "ctf_hints"
+    id = Column(Integer, primary_key=True, index=True)
+    flag_key = Column(String, nullable=False)
+    hint_text = Column(String, nullable=False)
+    hint_order = Column(Integer, default=0)
+
 class DBShortcut(Base):
     __tablename__ = "fun_shortcuts"
     id = Column(Integer, primary_key=True, index=True)
@@ -222,6 +242,15 @@ def ensure_db_schema():
 ensure_db_schema()
 
 app = FastAPI(title="家庭高净值资产控制台")
+
+# 🕵️ CTF H# 🕵️ CTF Headers — ASCII only to avoid Unicode errors
+@app.middleware("http")
+async def ctf_header_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Hint"] = "Try /robots.txt and view page source!"
+    response.headers["X-CTF-Challenge"] = "Find all 11 FLAG{...} tokens hidden in this site!"
+    return response
+
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
@@ -1286,6 +1315,121 @@ def go_shortcut(path: str, db: Session = Depends(get_db)):
     s = db.query(DBShortcut).filter(DBShortcut.path == path, DBShortcut.is_active == 1).first()
     if s: return RedirectResponse(url=s.target_url, status_code=302)
     raise HTTPException(status_code=404, detail=f"短链接 /{path} 不存在")
+
+
+
+# ==========================================
+# 🕵️ 白客训练场 CTF系统
+# ==========================================
+
+import random as _random
+
+def _ensure_ctf_seeds(db: Session):
+    """种子CTF题目"""
+    if db.query(DBCTFFlag).count() > 0:
+        return
+    flags = [
+        DBCTFFlag(flag_key="FLAG{robots_are_not_your_enemy}", title="🤖 robots.txt 的秘密", description="有时候，搜索引擎不想看到的东西，正是你想找的。", points=10, difficulty="easy"),
+        DBCTFFlag(flag_key="FLAG{source_code_is_your_friend}", title="📜 源码里的宝藏", description="查看网页源代码，找找有没有藏起来的东西。", points=10, difficulty="easy"),
+        DBCTFFlag(flag_key="FLAG{http_headers_tell_all}", title="📨 请求头的秘密", description="服务器每次回复都会带上很多信息，检查一下响应头。", points=15, difficulty="easy"),
+        DBCTFFlag(flag_key="FLAG{console_is_your_best_friend}", title="💻 开发者控制台", description="F12打开控制台，看看有没有特别的东西。", points=10, difficulty="easy"),
+        DBCTFFlag(flag_key="FLAG{cookies_are_delicious}", title="🍪 Cookie 里藏了什么", description="检查一下网站给你发了什么Cookie。", points=15, difficulty="medium"),
+        DBCTFFlag(flag_key="FLAG{base64_is_not_encryption}", title="🔐 Base64 不是加密", description="Q29uZ3JhdHVsYXRpb25zISBZb3UgZm91bmQgaXQh", points=15, difficulty="medium"),
+        DBCTFFlag(flag_key="FLAG{sql_injection_is_still_a_thing}", title="💉 SQL 注入入门", description="尝试在登录框输入 ' OR '1'='1 会发生什么？", points=20, difficulty="medium"),
+        DBCTFFlag(flag_key="FLAG{jwt_tokens_are_not_magic}", title="🎫 JWT Token 解析", description="抓到GP的token，去jwt.io看看里面有什么。", points=20, difficulty="hard"),
+        DBCTFFlag(flag_key="FLAG{api_endpoints_are_everywhere}", title="🗺️ API 端点探测绘", description="试试 /api/v1/ 后面加上各种路径，或者看 /openapi.json", points=25, difficulty="hard"),
+        DBCTFFlag(flag_key="FLAG{the_42nd_challenge}", title="🐬 终极答案", description="在页面上输入某个著名的数字...", points=30, difficulty="hard"),
+        DBCTFFlag(flag_key="FLAG{you_are_a_real_hacker_now}", title="🏆 真·白客认证", description="如果你能看到这个，说明你已经掌握了Web渗透的基础。恭喜！", points=50, difficulty="legendary"),
+    ]
+    for f in flags:
+        db.add(f)
+    db.commit()
+
+    # 种子提示
+    hints = [
+        DBCTFFlag(flag_key="FLAG{robots_are_not_your_enemy}", hint_text="试试访问 /robots.txt", hint_order=1),
+        DBCTFFlag(flag_key="FLAG{source_code_is_your_friend}", hint_text="右键→查看网页源代码", hint_order=1),
+        DBCTFFlag(flag_key="FLAG{http_headers_tell_all}", hint_text="F12→Network→刷新页面→看Response Headers", hint_order=1),
+        DBCTFFlag(flag_key="FLAG{console_is_your_best_friend}", hint_text="按F12，点Console标签", hint_order=1),
+        DBCTFFlag(flag_key="FLAG{cookies_are_delicious}", hint_text="F12→Application→Cookies", hint_order=1),
+        DBCTFFlag(flag_key="FLAG{base64_is_not_encryption}", hint_text="Q29uZ3JhdHVsYXRpb25zISBZb3UgZm91bmQgaXQh 是什么编码？", hint_order=1),
+        DBCTFFlag(flag_key="FLAG{sql_injection_is_still_a_thing}", hint_text="试试在登录框输入特殊字符", hint_order=1),
+        DBCTFFlag(flag_key="FLAG{jwt_tokens_are_not_magic}", hint_text="登录GP后台，抓取X-GP-Token请求头", hint_order=1),
+        DBCTFFlag(flag_key="FLAG{api_endpoints_are_everywhere}", hint_text="访问 /docs 或 /openapi.json 看看所有API", hint_order=1),
+        DBCTFFlag(flag_key="FLAG{the_42nd_challenge}", hint_text="在你的键盘上输入那个问题的答案", hint_order=1),
+        DBCTFFlag(flag_key="FLAG{you_are_a_real_hacker_now}", hint_text="集齐所有flag即可解锁", hint_order=1),
+    ]
+    for h in hints:
+        db.add(h)
+    db.commit()
+
+# robots.txt — 白客第一课
+@app.get("/robots.txt", include_in_schema=False)
+def robots_txt():
+    return Response(content="""User-agent: *
+Disallow: /admin
+Disallow: /secret-panel
+Disallow: /hidden-api
+Disallow: /backup.zip
+Allow: /
+
+# FLAG{robots_are_not_your_enemy}
+# 恭喜你找到了第一个flag！去渗透挑战面板提交吧！
+# 提示：下一个flag藏在网页源代码里 👀
+""", media_type="text/plain")
+
+# 伪造的"遗忘后台"
+from fastapi.responses import PlainTextResponse
+
+@app.get("/secret-panel", include_in_schema=False)
+def secret_panel():
+    return HTMLResponse(content="""<!DOCTYPE html><html><head><title>内部管理系统</title><style>body{background:#000;color:#0f0;font-family:monospace;padding:40px;text-align:center}h1{color:#f00}.hidden{color:#000}.hidden:hover{color:#0f0}</style></head><body><h1>⚠️ 警告：越权访问！</h1><p>你的IP已被记录：""" + _random.choice(["192.168.1.1","10.0.0.1","172.16.0.1"]) + """</p><p>系统已触发警报 🚨</p><br><p class="hidden">开玩笑的 😂 这是给你弟弟的白客训练场~</p><p class="hidden">试试访问 /hidden-api?token=guest</p></body></html>""")
+
+@app.get("/hidden-api", include_in_schema=False)
+def hidden_api(token: str = None):
+    if token == "guest":
+        return {"status": "access granted", "message": "欢迎初级白客", "flag": "FLAG{robots_are_not_your_enemy}", "next_hint": "检查网页源码中的HTML注释"}
+    return {"status": "denied", "message": "需要 token 参数", "hint": "试试 ?token=guest"}
+
+@app.get("/backup.zip", include_in_schema=False)
+def fake_backup():
+    return Response(content="PK\x03\x04\n这不是真的ZIP文件，但是你在正确的方向上！\nFLAG{robots_are_not_your_enemy}\n下一个flag在响应头里", media_type="application/zip")
+
+# CTF验证端点
+@app.post("/api/v1/ctf/submit")
+def ctf_submit(flag: str = Form(...), db: Session = Depends(get_db)):
+    _ensure_ctf_seeds(db)
+    found = db.query(DBCTFFlag).filter(DBCTFFlag.flag_key == flag.strip()).first()
+    if not found:
+        return {"status": "wrong", "message": "Flag错误，继续尝试！"}
+    if found.found_by:
+        return {"status": "already_found", "message": f"这个Flag已经被 {found.found_by} 找到了！"}
+    found.found_by = "弟弟"
+    found.found_at = datetime.now()
+    db.commit()
+    total = db.query(DBCTFFlag).filter(DBCTFFlag.found_by.isnot(None)).count()
+    all_count = db.query(DBCTFFlag).count()
+    return {"status": "success", "title": found.title, "points": found.points, "message": f"🎉 恭喜！{found.title} (+{found.points}分)", "progress": f"{total}/{all_count}"}
+
+@app.get("/api/v1/ctf/status")
+def ctf_status(db: Session = Depends(get_db)):
+    _ensure_ctf_seeds(db)
+    flags = db.query(DBCTFFlag).all()
+    found = [f for f in flags if f.found_by]
+    return {
+        "total": len(flags),
+        "found": len(found),
+        "total_points": sum(f.points for f in found),
+        "max_points": sum(f.points for f in flags),
+        "flags": [{"key": f.flag_key[:15]+"...", "title": f.title, "points": f.points, "difficulty": f.difficulty, "found": bool(f.found_by), "found_at": f.found_at.strftime("%m/%d %H:%M") if f.found_at else None} for f in flags]
+    }
+
+@app.get("/api/v1/ctf/hint/{flag_key:path}")
+def ctf_hint(flag_key: str, db: Session = Depends(get_db)):
+    hints = db.query(DBCTFHint).filter(DBCTFHint.flag_key == flag_key).order_by(DBCTFHint.hint_order).all()
+    if not hints:
+        return {"hints": ["这个flag没有额外的提示，靠你自己了！"]}
+    return {"hints": [h.hint_text for h in hints]}
 
 
 # ==========================================

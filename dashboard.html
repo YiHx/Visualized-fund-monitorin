@@ -399,7 +399,44 @@
                         <span v-if="r.prize_value > 0" class="text-xs text-emerald-400 font-mono">+¥{{ r.prize_value.toFixed(2) }}</span>
                     </div>
                 </div>
+            
+        <!-- 🕵️ 白客渗透挑战台 -->
+        <div v-if="isAuthenticated" class="border border-green-700 rounded-lg p-6 bg-gray-900 shadow-lg relative overflow-hidden">
+            <div class="absolute top-0 right-0 bg-green-600 text-xs font-bold px-2 py-1 rounded-bl text-white tracking-widest">CTF</div>
+            <h3 class="text-lg text-green-400 font-bold mb-2 flex items-center gap-2">
+                🕵️ 白客训练场 · 渗透挑战
+                <span v-if="ctfFound > 0" class="text-xs bg-green-900/50 border border-green-700 px-2 py-1 rounded text-green-400">🏆 {{ ctfFound }}/{{ ctfTotal }} · {{ ctfScore }}分</span>
+            </h3>
+            <p class="text-xs text-gray-500 mb-3">提示：善用开发者工具(F12)、查看源码、检查网络请求。</p>
+
+            <!-- Flag提交框 -->
+            <form @submit.prevent="submitCtfFlag" class="flex gap-2 mb-3">
+                <input v-model="ctfInput" type="text" placeholder="FLAG{...}"
+                       class="flex-1 bg-black border border-green-700/50 rounded px-3 py-2 text-green-400 font-mono text-sm focus:outline-none focus:border-green-500 placeholder-gray-600">
+                <button type="submit" :disabled="ctfSubmitting" class="bg-green-700 hover:bg-green-600 text-white font-bold px-4 py-2 rounded text-sm transition disabled:opacity-50">提交</button>
+            </form>
+            <div v-if="ctfResult" class="text-xs mb-3 px-3 py-2 rounded" :class="ctfResult.status === 'success' ? 'bg-green-900/30 text-green-400 border border-green-700' : 'bg-red-900/30 text-red-400 border border-red-700'">{{ ctfResult.message }}</div>
+
+            <!-- 进度条 -->
+            <div class="w-full bg-gray-800 rounded-full h-2 mb-3 border border-gray-700 overflow-hidden">
+                <div class="bg-gradient-to-r from-green-600 to-emerald-400 h-full rounded-full transition-all duration-700" :style="'width:'+(ctfFound/ctfTotal*100)+'%'"></div>
             </div>
+
+            <!-- Flag列表 -->
+            <div class="space-y-1 max-h-80 overflow-y-auto pr-1">
+                <div v-for="f in ctfFlags" :key="f.title" class="flex items-center justify-between text-xs p-2 rounded border" :class="f.found ? 'bg-green-900/20 border-green-800/50' : 'bg-black/30 border-gray-800'">
+                    <div class="flex items-center gap-2 flex-1 min-w-0">
+                        <span>{{ f.found ? '✅' : '🔒' }}</span>
+                        <span :class="f.found ? 'text-green-400 line-through' : 'text-gray-400'">{{ f.title }}</span>
+                        <span class="text-gray-600">(+{{ f.points }}分)</span>
+                        <span class="px-1.5 py-0.5 rounded text-[10px]" :class="f.difficulty === 'easy' ? 'bg-green-900/50 text-green-500' : f.difficulty === 'medium' ? 'bg-yellow-900/50 text-yellow-500' : f.difficulty === 'hard' ? 'bg-red-900/50 text-red-500' : 'bg-purple-900/50 text-purple-400'">{{ f.difficulty }}</span>
+                    </div>
+                    <button v-if="!f.found" @click="getCtfHint(f.title)" class="text-blue-400 hover:text-blue-300 text-xs border border-blue-800/50 px-2 py-0.5 rounded transition">💡提示</button>
+                    <span v-else class="text-gray-600 text-xs">{{ f.found_at }}</span>
+                </div>
+            </div>
+        </div>
+</div>
         </div>
         <div class="border border-gray-700 rounded-lg p-6 bg-gray-900 shadow-inner">
             <h3 class="text-lg text-yellow-500 font-bold mb-4 flex items-center">💬 留言板（支持图片/视频）</h3>
@@ -791,6 +828,17 @@
     console.log('%c💡 提示：试试按 ↑↑↓↓←→←→BA', 'color:#fbbf24;font-style:italic;');
     console.log('%c🐛 如果你发现了bug，那不是bug，那是GP的宏观调控。', 'color:#94a3b8;');
     console.log('%c📖 弟弟使用手册第一章：多抽奖，少提款。', 'color:#fbbf24;');
+    
+    // 🕵️ CTF训练场提示
+    console.log('%c🕵️ 白客训练场已加载！试试这些：', 'color:#34d399;font-size:14px;font-weight:bold');
+    console.log('%c  1. 访问 /robots.txt', 'color:#fbbf24;');
+    console.log('%c  2. 查看网页源代码', 'color:#fbbf24;');
+    console.log('%c  3. F12→Console 看看', 'color:#fbbf24;');
+    console.log('%c  4. 检查HTTP响应头', 'color:#fbbf24;');
+    console.log('%c  5. 查看Cookie', 'color:#fbbf24;');
+    console.log('%c  6. 密文挑战：Q29uZ3JhdHVsYXRpb25zISBZb3UgZm91bmQgaXQh', 'color:#fbbf24;');
+    console.log('%c💡 提示：所有flag格式为 FLAG{...}', 'color:#94a3b8;');
+
     console.log('%c🐬 提示：试试在页面上直接输入 42', 'color:#f472b6;font-size:11px;');
 
     const { createApp, ref, onMounted, onUnmounted } = Vue
@@ -915,6 +963,49 @@
             const drawCount = ref(0);
             const specialDayText = ref(getSpecialDay());
 
+            // 🕵️ CTF白客训练
+            const ctfInput = ref('');
+            const ctfResult = ref(null);
+            const ctfSubmitting = ref(false);
+            const ctfFlags = ref([]);
+            const ctfFound = ref(0);
+            const ctfTotal = ref(11);
+            const ctfScore = ref(0);
+
+            const fetchCtfStatus = async () => {
+                try {
+                    const res = await fetch(`${API_BASE}/ctf/status`);
+                    if (res.ok) {
+                        const d = await res.json();
+                        ctfFlags.value = d.flags;
+                        ctfFound.value = d.found;
+                        ctfTotal.value = d.total;
+                        ctfScore.value = d.total_points;
+                    }
+                } catch(_) {}
+            };
+
+            const submitCtfFlag = async () => {
+                if (!ctfInput.value.trim()) return;
+                ctfSubmitting.value = true;
+                const fd = new FormData();
+                fd.append('flag', ctfInput.value.trim());
+                const res = await fetch(`${API_BASE}/ctf/submit`, { method: 'POST', body: fd });
+                ctfResult.value = await res.json();
+                if (res.ok) { ctfInput.value = ''; fetchCtfStatus(); }
+                ctfSubmitting.value = false;
+            };
+
+            const getCtfHint = async (title) => {
+                // Find flag_key by title
+                const flag = ctfFlags.value.find(f => f.title === title);
+                if (!flag) return;
+                const res = await fetch(`${API_BASE}/ctf/hint/${flag.title}`);
+                const d = await res.json();
+                if (d.hints?.length) alert('💡 提示：\n' + d.hints.join('\n'));
+            };
+
+
             const fetchLotteryStatus = async () => {
                 try {
                     const res = await fetch(`${API_BASE}/lp/lottery_status`);
@@ -1004,6 +1095,7 @@
                 }
                 lottery.value.spinning = false;
                 fetchLotteryStatus();
+            fetchCtfStatus();
             };
 
             const isUploading = ref(false);
@@ -1126,7 +1218,8 @@
                     limitStatus.value = await fetchJsonWithRetry(`${API_BASE}/lp/limit_status?t=${t}`);
                     messages.value = await fetchJsonWithRetry(`${API_BASE}/messages?t=${t}`);
                     myRequests.value = await fetchJsonWithRetry(`${API_BASE}/lp/my_requests?t=${t}`);
-                    fetchLotteryStatus();  // 异步拉取抽奖状态，不阻塞
+                    fetchLotteryStatus();
+            fetchCtfStatus();  // 异步拉取抽奖状态，不阻塞
 
                     const newNotices = await fetchJsonWithRetry(`${API_BASE}/lp/notices?t=${t}`);
                     notices.value = newNotices;
@@ -1567,6 +1660,7 @@
                 navDisplay, navMood, clickNav, isAuthenticated, showAuthModal, pinInput, verifyPin, closeAuthModal, logout, initiateCall,
                 showEncourage, encourageText, nextEncourage, fortuneText, showFortune, drawFortune,
                 luckyActive, drawCount, specialDayText,
+                ctfInput, ctfResult, ctfSubmitting, ctfFlags, ctfFound, ctfTotal, ctfScore, submitCtfFlag, getCtfHint, fetchCtfStatus,
                 showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall,
                 lottery, doLotteryDraw,
                 form, alphaForm, fileInput, msgInput, msgFileInput, selectedMessageFile, messages, myRequests,
