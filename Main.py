@@ -47,7 +47,7 @@ from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, Form, sta
 #
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
@@ -177,6 +177,18 @@ class DBWebAuthnCred(Base):
     public_key_y = Column(String, nullable=False)   # hex encoded
     sign_count = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.now)
+
+
+class DBShortcut(Base):
+    __tablename__ = "fun_shortcuts"
+    id = Column(Integer, primary_key=True, index=True)
+    path = Column(String, unique=True, nullable=False)
+    title = Column(String, nullable=False)
+    target_url = Column(String, nullable=False)
+    icon = Column(String, nullable=False, default="🔗")
+    description = Column(String, nullable=True)
+    category = Column(String, nullable=False, default="other")
+    is_active = Column(Integer, nullable=False, default=1)
 
 Base.metadata.create_all(bind=engine)
 
@@ -1118,6 +1130,164 @@ def gp_lottery_reset(db: Session = Depends(get_db), _: bool = Depends(require_gp
     return {"status": "success", "message": "抽奖记录已清空"}
 
 
+
+
+# ==========================================
+# 🎉 趣味页面 + 下载 + 短链接管理
+# ==========================================
+
+FUN_FILES_DIR = os.path.join(BASE_DIR, "funfiles")
+if not os.path.exists(FUN_FILES_DIR):
+    os.makedirs(FUN_FILES_DIR)
+
+# 自动生成趣味下载文件
+def _ensure_fun_files():
+    files = {
+        "navy_secret.txt": "🤫 绝密文件 — 仅供弟弟查阅 🤫\n\n═══════════════════════════════════\n  家庭基金 · 最高机密卷宗 #42\n═══════════════════════════════════\n\n致 弟弟：\n\n  经过我方情报人员的长期观察（其实就是GP本人），\n  现确认以下事实：\n\n  1. 你的NAV目前已突破 ¥1,000 大关\n  2. 你的抽奖运势评级：★★★★★（五星）\n  3. GP对你的评价：『唯一的缺点就是太乖了』\n  4. 本文件将在阅读后60秒内自动销毁（并不会）\n\n签名：\n  远坂 凛 (GP 资产守护灵)\n  2026年7月17日\n\n═══════════════════════════════════════\n  🦭 盖章：弟弟最棒！认证完毕 🦭\n═══════════════════════════════════════",
+        "rin_blessing.txt": "💎 遠坂凛 · NAV祝福之詩 💎\n\n　　✨　 ／＼／＼／＼　✨\n　 ＜  NAVよ、上がれ！  ＞\n　　✨　 ＼／＼／＼／　✨\n\n　　「私の宝石魔術で、\n　　　 この資産を守り抜く！」\n\n　　　　─ 遠坂 凛 ─\n\n　　＊　＊　＊　＊　＊\n\n　弟よ、このお守りを\n　受け取りなさい 💎\n\n　効能：NAV増加 · 抽選運UP\n　有効期限：永遠\n\n　＊　＊　＊　＊　＊",
+        "easter_eggs.txt": "🥚 网站彩蛋大全 🥚\n\n键盘输入:\n  42 → 全屏🐬\n  help → 伪终端\n  ↑↑↓↓←→←→BA → 大撒花\n\n鼠标操作:\n  连击NAV 5次 → 彩蛋\n  滚到底 → 🍪提醒\n\n网址彩蛋:\n  /42 → 生命宇宙的答案\n  /rickroll → 你懂的\n  /secret → 后台入口\n\n更多隐藏彩蛋等你发现 🔍\n(温馨提示: F12有惊喜)",
+        "bitcoin_wallet.txt": "⚠️ 比特币私钥（绝对机密）⚠️\n\n钱包地址: 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa\n私钥: L2... 哈哈哈哈骗你的 😂\n\n真实情况：\n  你没有任何比特币\n  但是你有 ¥{nav} 的家庭基金！\n  这比比特币靠谱多了 💪\n\n  — GP 留",
+    }
+    for name, content in files.items():
+        fpath = os.path.join(FUN_FILES_DIR, name)
+        if not os.path.exists(fpath):
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(content)
+
+_ensure_fun_files()
+
+# 种子短链接数据
+def _ensure_default_shortcuts(db: Session):
+    if db.query(DBShortcut).count() > 0:
+        return
+    defaults = [
+        DBShortcut(path="bilibili", title="BILIBILI干杯！", target_url="https://www.bilibili.com", icon="📺", description="(゜-゜)つロ 乾杯~", category="entertainment"),
+        DBShortcut(path="b", title="B站（短）", target_url="https://www.bilibili.com", icon="📺", description="最快到达B站", category="entertainment"),
+        DBShortcut(path="anime", title="番剧区", target_url="https://www.bilibili.com/anime", icon="🎬", description="二次元入口", category="entertainment"),
+        DBShortcut(path="rin", title="远坂凛 UBW", target_url="https://www.bilibili.com/video/BV1GJ411x7h7", icon="💎", description="凛の魔術ショー", category="anime"),
+        DBShortcut(path="fate", title="Fate/stay night", target_url="https://www.bilibili.com/bangumi/media/md28236452", icon="⚔️", description="聖杯戦争、始まる", category="anime"),
+        DBShortcut(path="rickroll", title="Rick Astley", target_url="https://www.youtube.com/watch?v=dQw4w9WgXcQ", icon="🕺", description="Never Gonna Give You Up", category="fun"),
+        DBShortcut(path="42", title="生命的答案", target_url="https://en.wikipedia.org/wiki/42_(number)", icon="🐬", description="The Answer to Life, the Universe, and Everything", category="fun"),
+        DBShortcut(path="cat", title="吸猫", target_url="https://www.bilibili.com/video/BV1kQ4y1P7Pd", icon="🐱", description="治愈猫咪视频", category="chill"),
+        DBShortcut(path="github", title="项目源码", target_url="https://github.com/YiHx/Visualized-fund-monitorin", icon="💻", description="给颗Star吧！", category="tech"),
+        DBShortcut(path="secret", title="后台入口", target_url="/admin", icon="👑", description="甲方后台", category="internal"),
+        DBShortcut(path="gp", title="GP控制台", target_url="/admin", icon="👑", description="甲方后台", category="internal"),
+        DBShortcut(path="lp", title="LP前台", target_url="/", icon="📊", description="乙方前台", category="internal"),
+    ]
+    for s in defaults:
+        db.add(s)
+    db.commit()
+
+# 趣味中心页面
+@app.get("/fun", include_in_schema=False)
+def fun_hub(db: Session = Depends(get_db)):
+    _ensure_default_shortcuts(db)
+    # 返回一个超炫的HTML页面，列出所有shortcuts
+    shortcuts = db.query(DBShortcut).filter(DBShortcut.is_active == 1).order_by(DBShortcut.category, DBShortcut.id).all()
+    download_files = [f for f in os.listdir(FUN_FILES_DIR) if os.path.isfile(os.path.join(FUN_FILES_DIR, f))]
+
+    # 按分类整理
+    cats = {}
+    for s in shortcuts:
+        cats.setdefault(s.category, []).append(s)
+
+    sc_html = ""
+    cat_icons = {"entertainment":"🎬","anime":"⚔️","fun":"🥚","chill":"☕","tech":"💻","internal":"🔐","other":"🔗"}
+    for cat, items in cats.items():
+        icon = cat_icons.get(cat, "🔗")
+        sc_html += f'<div style="margin-bottom:18px"><h3 style="color:#fbbf24;margin-bottom:8px">{icon} {cat.upper()}</h3><div style="display:flex;flex-wrap:wrap;gap:8px">'
+        for s in items:
+            sc_html += f'<a href="{s.target_url}" target="_blank" style="display:flex;align-items:center;gap:6px;background:rgba(30,41,59,0.8);padding:8px 14px;border-radius:8px;text-decoration:none;color:#e2e8f0;border:1px solid #334155;transition:all 0.2s;font-size:13px" onmouseover="this.style.borderColor=\'#fbbf24\';this.style.background=\'rgba(251,191,36,0.1)\'" onmouseout="this.style.borderColor=\'#334155\';this.style.background=\'rgba(30,41,59,0.8)\'"><span style="font-size:18px">{s.icon}</span><div><div style="font-weight:bold">{s.title}</div><div style="font-size:10px;color:#94a3b8">{s.description or ""}</div></div></a>'
+        sc_html += '</div></div>'
+
+    dl_html = ""
+    dl_icons = {"navy_secret.txt":"🤫","rin_blessing.txt":"💎","easter_eggs.txt":"🥚","bitcoin_wallet.txt":"💰"}
+    for fname in download_files:
+        icon = dl_icons.get(fname, "📄")
+        size = os.path.getsize(os.path.join(FUN_FILES_DIR, fname))
+        dl_html += f'<a href="/api/v1/fun/download/{fname}" style="display:flex;align-items:center;gap:8px;background:rgba(16,185,129,0.1);padding:10px 16px;border-radius:8px;text-decoration:none;color:#34d399;border:1px solid rgba(16,185,129,0.3);transition:all 0.2s;font-size:13px" onmouseover="this.style.background=\'rgba(16,185,129,0.2)\';this.style.borderColor=\'#34d399\'" onmouseout="this.style.background=\'rgba(16,185,129,0.1)\';this.style.borderColor=\'rgba(16,185,129,0.3)\'"><span style="font-size:20px">{icon}</span><div><div style="font-weight:bold">{fname}</div><div style="font-size:10px;color:#6ee7b7">{size} bytes</div></div><span style="margin-left:auto">⬇️</span></a>'
+
+    return HTMLResponse(content=f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>🎉 趣味中心 | 家庭基金</title>
+<style>*{{margin:0;padding:0;box-sizing:border-box}}body{{background:#0f172a;color:#f8fafc;font-family:'Segoe UI',system-ui,sans-serif;min-height:100vh;padding:24px}}
+.container{{max-width:900px;margin:0 auto}}
+h1{{font-size:2.5rem;background:linear-gradient(135deg,#fbbf24,#f59e0b,#34d399);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px}}
+.subtitle{{color:#94a3b8;margin-bottom:24px;font-size:14px}}
+.card{{background:rgba(30,41,59,0.5);border:1px solid #1e293b;border-radius:16px;padding:20px;margin-bottom:16px}}
+.card h2{{color:#f8fafc;margin-bottom:12px;font-size:18px;display:flex;align-items:center;gap:8px}}
+.back-link{{display:inline-flex;align-items:center;gap:4px;color:#94a3b8;text-decoration:none;font-size:13px;margin-bottom:16px;transition:color 0.2s}}
+.back-link:hover{{color:#fbbf24}}
+footer{{text-align:center;color:#475569;font-size:11px;margin-top:32px;padding:16px 0;border-top:1px solid #1e293b}}
+.rainbow{{animation:rainbow 3s linear infinite}}@keyframes rainbow{{0%{{filter:hue-rotate(0deg)}}100%{{filter:hue-rotate(360deg)}}}}
+"""+sc_html+dl_html+"""</style></head><body><div class="container">
+<a href="/" class="back-link">← 回到监控台</a>
+<h1>🎉 趣味中心 <span class="rainbow">🌈</span></h1>
+<p class="subtitle">短链接跳转 · 趣味下载 · 更多彩蛋 — 由远坂凛 💎 加持</p>
+<div class="card"><h2>🔗 短链接跳转</h2>""" + sc_html + """</div>
+<div class="card"><h2>📥 趣味下载</h2>""" + dl_html + """</div>
+<footer>💎 凛 Protection Active · yhymoney.asia · (゜-゜)つロ 乾杯~</footer>
+</div></body></html>""")
+
+# 趣味下载端点
+@app.get("/api/v1/fun/download/{filename}")
+def fun_download(filename: str):
+    fpath = os.path.join(FUN_FILES_DIR, filename)
+    if not os.path.exists(fpath):
+        raise HTTPException(status_code=404, detail="文件不存在")
+    return FileResponse(fpath, media_type="application/octet-stream", filename=filename)
+
+# LP 端获取趣味列表
+@app.get("/api/v1/fun/list")
+def fun_list(db: Session = Depends(get_db)):
+    _ensure_default_shortcuts(db)
+    shortcuts = db.query(DBShortcut).filter(DBShortcut.is_active == 1).all()
+    downloads = [{"name": f, "size": os.path.getsize(os.path.join(FUN_FILES_DIR, f))} for f in os.listdir(FUN_FILES_DIR) if os.path.isfile(os.path.join(FUN_FILES_DIR, f))]
+    return {
+        "shortcuts": [{"path": s.path, "title": s.title, "target_url": s.target_url, "icon": s.icon, "description": s.description, "category": s.category} for s in shortcuts],
+        "downloads": downloads
+    }
+
+# GP 短链接管理
+@app.get("/api/v1/gp/shortcuts")
+def gp_shortcuts(db: Session = Depends(get_db), _: bool = Depends(require_gp_auth)):
+    _ensure_default_shortcuts(db)
+    shortcuts = db.query(DBShortcut).order_by(DBShortcut.id).all()
+    return {"shortcuts": [{"id": s.id, "path": s.path, "title": s.title, "target_url": s.target_url, "icon": s.icon, "description": s.description or "", "category": s.category, "is_active": bool(s.is_active)} for s in shortcuts]}
+
+@app.post("/api/v1/gp/shortcuts")
+def gp_shortcuts_manage(
+    action: str = Form(...),
+    shortcut_id: int = Form(None),
+    path: str = Form(None),
+    title: str = Form(None),
+    target_url: str = Form(None),
+    icon: str = Form(None),
+    description: str = Form(None),
+    category: str = Form(None),
+    db: Session = Depends(get_db),
+    _: bool = Depends(require_gp_auth)
+):
+    _ensure_default_shortcuts(db)
+    if action == "add" and path and title and target_url:
+        db.add(DBShortcut(path=path, title=title, target_url=target_url, icon=icon or "🔗", description=description or "", category=category or "other"))
+        db.commit()
+        return {"status": "success", "message": f"短链接 /{path} 已添加！"}
+    if action in ("delete", "toggle") and shortcut_id:
+        s = db.query(DBShortcut).filter(DBShortcut.id == shortcut_id).first()
+        if not s: raise HTTPException(status_code=404, detail="不存在")
+        if action == "delete": db.delete(s)
+        else: s.is_active = 0 if s.is_active else 1
+        db.commit()
+        return {"status": "success", "message": f"已{'删除' if action == 'delete' else '切换'}"}
+    raise HTTPException(status_code=400, detail="参数不足")
+
+# 动态短链接路由（DB驱动的，覆盖已有硬编码）
+@app.get("/go/{path:path}", include_in_schema=False)
+def go_shortcut(path: str, db: Session = Depends(get_db)):
+    s = db.query(DBShortcut).filter(DBShortcut.path == path, DBShortcut.is_active == 1).first()
+    if s: return RedirectResponse(url=s.target_url, status_code=302)
+    raise HTTPException(status_code=404, detail=f"短链接 /{path} 不存在")
+
+
 # ==========================================
 # 4. 页面路由
 # ==========================================
@@ -1139,79 +1309,7 @@ def video_call_page():
 # ==========================================
 # 🥚🥚🥚 趣味短链接跳转彩蛋
 # ==========================================
-from fastapi.responses import RedirectResponse
 
-SHORTCUTS = {
-    "/bilibili": "https://www.bilibili.com",
-    "/b站": "https://www.bilibili.com",
-    "/b": "https://www.bilibili.com",
-    "/github": "https://github.com/YiHx/Visualized-fund-monitorin",
-    "/git": "https://github.com/YiHx/Visualized-fund-monitorin",
-    "/repo": "https://github.com/YiHx/Visualized-fund-monitorin",
-    "/youtube": "https://www.youtube.com",
-    "/yt": "https://www.youtube.com",
-    "/google": "https://www.google.com",
-    "/gg": "https://www.google.com",
-    "/baidu": "https://www.baidu.com",
-    "/bd": "https://www.baidu.com",
-    "/zhihu": "https://www.zhihu.com",
-    "/weibo": "https://www.weibo.com",
-    "/douyin": "https://www.douyin.com",
-    "/dy": "https://www.douyin.com",
-    "/taobao": "https://www.taobao.com",
-    "/jd": "https://www.jd.com",
-    "/reddit": "https://www.reddit.com",
-    "/twitter": "https://x.com",
-    "/x": "https://x.com",
-    "/chatgpt": "https://chat.openai.com",
-    "/ai": "https://chat.openai.com",
-    "/gpt": "https://chat.openai.com",
-    "/wiki": "https://zh.wikipedia.org",
-    "/pornhub": "https://www.bilibili.com/video/BV1GJ411x7h7",
-    "/ph": "https://www.bilibili.com/video/BV1GJ411x7h7",
-    "/rickroll": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-    "/rick": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-    "/rin": "https://www.bilibili.com/video/BV1GJ411x7h7",
-    "/fate": "https://www.bilibili.com/bangumi/media/md28236452",
-    "/navy": "https://www.navy.com",
-    "/42": "https://en.wikipedia.org/wiki/42_(number)",
-    "/answer": "https://en.wikipedia.org/wiki/Phrases_from_The_Hitchhiker%27s_Guide_to_the_Galaxy#Answer_to_the_Ultimate_Question_of_Life,_the_Universe,_and_Everything_(42)",
-    "/money": "https://www.bilibili.com/video/BV1uT4y1P7CX",
-    "/lottery": "https://www.bilibili.com/video/BV1Es411379s",
-    "/cat": "https://www.bilibili.com/video/BV1kQ4y1P7Pd",
-    "/dog": "https://www.bilibili.com/video/BV1iV411k7dV",
-    "/miku": "https://www.bilibili.com/video/BV1bBcAeNEm2",
-    "/anime": "https://www.bilibili.com/anime",
-    "/game": "https://www.bilibili.com/v/game",
-    "/music": "https://music.163.com",
-    "/163": "https://music.163.com",
-    "/qqmusic": "https://y.qq.com",
-    "/weather": "https://www.accuweather.com",
-    "/map": "https://maps.google.com",
-    "/translate": "https://translate.google.com",
-    "/nb": "https://github.com/YiHx/Visualized-fund-monitorin",
-    "/status": "https://status.github.com",
-    "/easteregg": "/",
-    "/secret": "/admin",
-    "/gp": "/admin",
-    "/lp": "/",
-    "/dashboard": "/",
-    "/homura": "https://www.bilibili.com/bangumi/media/md28236452",
-    "/senko": "https://www.bilibili.com/video/BV1dJ411U7N5",
-    "/touhou": "https://www.bilibili.com/v/touhou",
-    "/genshin": "https://www.bilibili.com/v/genshin",
-    "/starrail": "https://www.bilibili.com/v/starrail",
-    "/arknights": "https://www.bilibili.com/v/arknights",
-    "/bling": "https://www.bilibili.com/video/BV1uT4y1P7CX",
-    "/chill": "https://www.bilibili.com/video/BV1Es411379s",
-    "/focus": "https://www.bilibili.com/video/BV12N4y1J7iG",
-    "/sleep": "https://www.bilibili.com/video/BV1dJ411U7N5",
-    "/coffee": "https://www.bilibili.com/video/BV1kQ4y1P7Pd",
-    "/donate": "https://www.bilibili.com/video/BV1uT4y1P7CX",
-}
-
-for path, target in SHORTCUTS.items():
-    def _make_redirect(target_url=target):
-        return lambda target_url=target_url: RedirectResponse(url=target_url, status_code=302)
-    _make_redirect.__name__ = f"redirect_{path.replace('/', '_')}"
-    app.get(path, include_in_schema=False)(_make_redirect())
+# Dynamic shortcuts loaded from DB — see above
+_ = 0  
+# Shortcuts now handled dynamically via /go/{path} and DB

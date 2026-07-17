@@ -56,8 +56,6 @@
 </style>
 </head>
 <body class="p-4 md:p-8 font-sans">
-
-<!-- 🔲 菜单按钮 -->
 <div id="admin-app" class="max-w-7xl mx-auto space-y-6">
 
     <!-- GP 身份验证弹窗 -->
@@ -271,6 +269,39 @@
         </div>
 
         <div class="space-y-6">
+
+
+            <!-- 🔗 短链接管理中心 -->
+            <div class="bg-cyan-900/20 p-6 rounded-lg border border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.15)] relative overflow-hidden">
+                <div class="absolute top-0 right-0 bg-cyan-600 text-xs font-bold px-2 py-1 rounded-bl text-white tracking-widest">LINKS</div>
+                <h2 class="font-bold text-cyan-400 mb-4">🔗 趣味短链接管理 (yhymoney.asia/xxx)</h2>
+
+                <div class="space-y-1.5 max-h-60 overflow-y-auto pr-1 mb-3">
+                    <div v-for="s in shortcuts" :key="s.id" class="flex items-center justify-between bg-black/70 p-1.5 rounded border text-xs" :class="s.is_active ? 'border-gray-700' : 'border-red-900/50 opacity-50'">
+                        <div class="flex items-center gap-1.5 flex-1 min-w-0">
+                            <span class="text-sm">{{ s.icon }}</span>
+                            <span class="text-cyan-400 font-mono text-[11px]">/{{ s.path }}</span>
+                            <span class="text-gray-300 truncate max-w-[80px]">{{ s.title }}</span>
+                            <span class="text-gray-500 text-[10px] hidden md:inline">{{ s.target_url.substring(0,30) }}...</span>
+                        </div>
+                        <div class="flex gap-1">
+                            <button @click="shortcutToggle(s)" class="text-xs px-2 py-0.5 rounded border" :class="s.is_active ? 'border-gray-600 text-gray-400' : 'border-red-700 text-red-400'" :title="s.is_active ? '停用' : '启用'">{{ s.is_active ? '⏸' : '▶' }}</button>
+                            <button @click="shortcutDelete(s)" class="text-xs px-2 py-0.5 rounded border border-red-800/50 text-red-400">✕</button>
+                        </div>
+                    </div>
+                </div>
+
+                <form @submit.prevent="shortcutAdd" class="flex gap-1 items-end flex-wrap">
+                    <input v-model="scForm.path" placeholder="路径" class="w-20 bg-black border border-gray-700 rounded p-1 text-white text-xs focus:outline-none focus:border-cyan-500" required>
+                    <input v-model="scForm.title" placeholder="标题" class="w-20 bg-black border border-gray-700 rounded p-1 text-white text-xs focus:outline-none focus:border-cyan-500" required>
+                    <input v-model="scForm.target_url" placeholder="目标URL" class="w-32 bg-black border border-gray-700 rounded p-1 text-white text-xs focus:outline-none focus:border-cyan-500" required>
+                    <input v-model="scForm.icon" placeholder="图标" class="w-12 bg-black border border-gray-700 rounded p-1 text-white text-xs focus:outline-none focus:border-cyan-500" value="🔗">
+                    <select v-model="scForm.category" class="bg-black border border-gray-700 rounded p-1 text-white text-xs focus:outline-none">
+                        <option value="entertainment">🎬娱乐</option><option value="anime">⚔️动画</option><option value="fun">🥚趣味</option><option value="chill">☕放松</option><option value="tech">💻技术</option><option value="internal">🔐内部</option><option value="other">🔗其他</option>
+                    </select>
+                    <button type="submit" class="bg-cyan-700 hover:bg-cyan-600 text-white text-xs font-bold px-3 py-1 rounded transition">+添加</button>
+                </form>
+            </div>
 
             <!-- 🎰 抽奖系统控制台 -->
             <div class="bg-purple-900/20 p-6 rounded-lg border border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.15)] relative overflow-hidden">
@@ -991,6 +1022,40 @@
             };
 
 
+            // 🔗 短链接管理
+            const shortcuts = ref([]);
+            const scForm = ref({ path: '', title: '', target_url: '', icon: '🔗', category: 'fun' });
+
+            const fetchShortcuts = async () => {
+                try {
+                    const res = await fetch(`${API_BASE}/gp/shortcuts`, { headers: { 'X-GP-Token': gpToken } });
+                    if (res.status === 403) { logout(); return; }
+                    if (res.ok) { const d = await res.json(); shortcuts.value = d.shortcuts; }
+                } catch(e) {}
+            };
+
+            const shortcutAdd = async () => {
+                const fd = new FormData();
+                fd.append('action', 'add'); fd.append('path', scForm.value.path); fd.append('title', scForm.value.title);
+                fd.append('target_url', scForm.value.target_url); fd.append('icon', scForm.value.icon); fd.append('category', scForm.value.category);
+                const res = await fetch(`${API_BASE}/gp/shortcuts`, { method: 'POST', body: fd, headers: { 'X-GP-Token': gpToken } });
+                if (res.status === 403) { logout(); return; }
+                if (res.ok) { scForm.value = { path: '', title: '', target_url: '', icon: '🔗', category: 'fun' }; fetchShortcuts(); }
+            };
+
+            const shortcutToggle = async (s) => {
+                const fd = new FormData(); fd.append('action', 'toggle'); fd.append('shortcut_id', s.id);
+                await fetch(`${API_BASE}/gp/shortcuts`, { method: 'POST', body: fd, headers: { 'X-GP-Token': gpToken } });
+                fetchShortcuts();
+            };
+
+            const shortcutDelete = async (s) => {
+                if (!confirm(`删除 /${s.path} ？`)) return;
+                const fd = new FormData(); fd.append('action', 'delete'); fd.append('shortcut_id', s.id);
+                await fetch(`${API_BASE}/gp/shortcuts`, { method: 'POST', body: fd, headers: { 'X-GP-Token': gpToken } });
+                fetchShortcuts();
+            };
+
             // 🎰 抽奖管理状态
             const lottoConfig = ref({ enabled: true, cost: 5, prizes: [] });
             const lottoStats = ref({ total_draws: 0, total_cost: 0, total_payout: 0, net_profit: 0, profit_rate: 0, wins: 0, jackpots: 0, loses: 0, recent: [] });
@@ -1240,6 +1305,7 @@
                     // 7. 拉取抽奖配置和统计（不阻塞主流程）
                     fetchLottoConfig();
                     fetchLottoStats();
+                    fetchShortcuts();
                 } catch(e) {
                     ok = false;
                     if (e.status === 403) { logout(); return false; }
@@ -1409,7 +1475,8 @@
                 document.removeEventListener('visibilitychange', restartPolling);
                 if (recoveredBannerTimer) clearTimeout(recoveredBannerTimer);
             });
-            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, notificationLogs, onlyFailedLogs, retryingLogId, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, retryNotification, replyMsg, isImageFileAdmin, isVideoFileAdmin, openMediaModalAdmin, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown, isAuthenticated, pinInput, authError, authLoading, authStep, webauthnReady, checkWebauthnReady, doFingerprintAuth, startFingerprint, doEnrollFingerprint, enrollFingerprint, resetFingerprint, verifyPin, logout, incomingCall, showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall, acceptIncomingCall, declineIncomingCall, currentQuote, quoteGlow, nextQuote, lottoConfig, lottoStats, lottoForm, lottoProb, fetchLottoConfig, fetchLottoStats, lotteryUpdateCost, lotteryToggleEnabled, lotteryTogglePrize, lotteryEditWeight, lotteryDeletePrize, lotteryAddPrize, lotteryResetRecords }
+            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, notificationLogs, onlyFailedLogs, retryingLogId, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, retryNotification, replyMsg, isImageFileAdmin, isVideoFileAdmin, openMediaModalAdmin, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown, isAuthenticated, pinInput, authError, authLoading, authStep, webauthnReady, checkWebauthnReady, doFingerprintAuth, startFingerprint, doEnrollFingerprint, enrollFingerprint, resetFingerprint, verifyPin, logout, incomingCall, showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall, acceptIncomingCall, declineIncomingCall, currentQuote, quoteGlow, nextQuote, lottoConfig, lottoStats, lottoForm, lottoProb, fetchLottoConfig, fetchLottoStats, lotteryUpdateCost, lotteryToggleEnabled, lotteryTogglePrize, lotteryEditWeight, lotteryDeletePrize, lotteryAddPrize, lotteryResetRecords,
+                shortcuts, scForm, fetchShortcuts, shortcutAdd, shortcutToggle, shortcutDelete }
         }
     }).mount('#admin-app')
 </script>
