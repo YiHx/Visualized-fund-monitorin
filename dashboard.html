@@ -43,9 +43,75 @@
           :★  ☆  凛ちゃん、NAVを守って！
           :☆
           :        —— 弟弟的守护魔法阵 ——
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │  🕵️ 白客训练场 · 渗透挑战指引 (藏在源码里)                    │
+  │  —— 弟弟，看到这段话说明你已经迈出了白客第一步！               │
+  ├──────────────────────────────────────────────────────────────┤
+  │                                                              │
+  │  📍 第1关 [easy]  robots.txt                                 │
+  │     → 访问 yhymoney.asia/robots.txt                         │
+  │     → 搜索引擎看不到的东西，也许正是你想要的                   │
+  │                                                              │
+  │  📍 第2关 [easy]  HTTP 响应头                                │
+  │     → F12 → Network → 刷新页面 → 点第一个请求 → Headers       │
+  │     → 服务器每次回复都夹带了私货...                            │
+  │                                                              │
+  │  📍 第3关 [easy]  开发者控制台                                │
+  │     → F12 → Console 标签                                     │
+  │     → 仔细看每一条彩色消息...                                  │
+  │                                                              │
+  │  📍 第4关 [medium] 🍪 Cookie                                 │
+  │     → F12 → Application → Cookies → yhymoney.asia            │
+  │     → 网站偷偷给你塞了什么？                                   │
+  │                                                              │
+  │  📍 第5关 [easy]  源码里的宝藏 ← 你正在看！                   │
+  │     → FLAG{source_code_is_your_friend}                       │
+  │     → 提交到渗透挑战面板验证！                                 │
+  │                                                              │
+  │  📍 第6关 [medium]  隐藏页面探测                              │
+  │     → /secret-panel  ← 伪造的越权警告页面                     │
+  │     → /hidden-api?token=guest  ← GET参数绕过                  │
+  │     → /backup.zip ← 假备份文件                                │
+  │     → /docs ← FastAPI自动生成的API文档                        │
+  │                                                              │
+  │  📍 第7关 [medium]  Base64侦探                               │
+  │     → Q29uZ3JhdHVsYXRpb25zISBZb3UgZm91bmQgaXQh               │
+  │     → 试试 base64 decode...                                   │
+  │                                                              │
+  │  📍 第8关 [hard]   登录框注入测试                             │
+  │     → 在PIN输入框输入特殊字符测试                              │
+  │     → 这不是真的SQL注入，但思路是一样的                        │
+  │                                                              │
+  │  📍 第9关 [hard]   API端点探测                                │
+  │     → 访问 /openapi.json 看全部API                            │
+  │     → 试试 /api/v1/ 后面的各种路径                            │
+  │                                                              │
+  │  📍 第10关 [hard]  终极答案                                   │
+  │     → 在页面上用键盘输入那个著名的数字...                      │
+  │     → 提示：生命、宇宙及一切的答案                              │
+  │                                                              │
+  │  📍 第11关 [legendary] 真·白客认证                            │
+  │     → 集齐前10个flag自动解锁                                   │
+  │                                                              │
+  │  💡 渗透技巧速查：                                            │
+  │    • 右键 → 查看网页源代码 (你已经在用了!)                     │
+  │    • F12 开发者工具 (Console / Network / Application)         │
+  │    • 修改URL路径尝试访问隐藏页面                               │
+  │    • 检查HTTP请求和响应头                                      │
+  │    • curl -I https://yhymoney.asia (命令行查看响应头)          │
+  │    • 遇到 Base64: echo '...' | base64 -d                      │
+  │                                                              │
+  │  🏆 Flag 格式: FLAG{...}  找到后去渗透挑战面板提交!            │
+  │  🎯 当前进度: 0/11  (提交flag后自动更新)                      │
+  │                                                              │
+  └──────────────────────────────────────────────────────────────┘
+
 -->
 <head>
     <meta charset="UTF-8">
+    <!-- 🕵️ 隐藏flag: FLAG{http_headers_tell_all} (响应头里的不算,去F12 Network里找!) -->
+    <!-- 🍪 Cookie里藏了一个flag,去Application面板找找看 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>家庭高净值资产 | 监控台</title>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -101,7 +167,7 @@
             </button>
             <div v-else class="flex items-center space-x-4">
                             <button @click="initiateCall" class="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-2 px-4 rounded transition shadow-lg">
-                    🎥 发起通话
+                    🎥 发起通话<!-- 🕵️ 隐藏提示：检查这个页面的HTML源码和HTTP响应头 -->
                 </button>
                 <span class="text-emerald-400 text-sm font-bold border border-emerald-500 bg-emerald-900/30 px-3 py-1 rounded">✅ 乙方已授权</span>
                 <button @click="logout" class="text-sm text-gray-400 hover:text-white underline transition">退出身份</button>
@@ -846,6 +912,11 @@
         setup() {
             const API_BASE = '/api/v1';
 
+            
+    // 🍪 CTF Cookie挑战：藏flag在Cookie里
+    document.cookie = 'ctf_hint=check_Application_tab_in_devtools; path=/; max-age=86400; SameSite=Lax';
+    document.cookie = 'FLAG{cookies_are_delicious}=you_found_me; path=/; max-age=86400; SameSite=Lax';
+    document.cookie = 'next_challenge=try_sql_injection_OR_1eq1; path=/; max-age=86400; SameSite=Lax';
             // 🥚 小彩蛋：双击NAV复制
             const navData = ref({});
             const navDisplay = ref('0.00');  // 动画化 NAV 显示值

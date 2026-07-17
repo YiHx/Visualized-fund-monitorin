@@ -249,6 +249,8 @@ async def ctf_header_middleware(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Hint"] = "Try /robots.txt and view page source!"
     response.headers["X-CTF-Challenge"] = "Find all 11 FLAG{...} tokens hidden in this site!"
+    response.headers["X-Flag-3"] = "FLAG{http_headers_tell_all}"
+    response.headers["X-Next-Step"] = "Check Cookies and source code for more flags"
     return response
 
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
@@ -545,7 +547,12 @@ class VerifyReq(BaseModel): pin: str
 
 @app.post("/api/v1/lp/verify")
 def verify_lp(req: VerifyReq):
-    if req.pin == "0103": return {"status": "success"}
+    # 🕵️ CTF: SQL injection detection
+    pin = req.pin.strip()
+    sqli = ["' OR '1'='1", "' OR 1=1", '" OR "1"="1', "OR 1=1", "'--", "admin'--"]
+    if any(p.lower() in pin.lower() for p in sqli):
+        return {"status": "ctf_detected", "message": "🕵️ SQL注入检测！思路正确！Flag: FLAG{sql_injection_is_still_a_thing}", "flag": "FLAG{sql_injection_is_still_a_thing}"}
+    if pin == "0103": return {"status": "success"}
     raise HTTPException(status_code=403, detail="授权码错误。")
 
 # GP 认证 —— 保护后台管理页面
@@ -565,9 +572,9 @@ def verify_gp_token(token: str) -> bool:
     return token in _valid_gp_tokens
 
 def require_gp_auth(x_gp_token: str = Header(None)):
-    """GP API 端点鉴权 —— 从请求头 X-GP-Token 读取会话令牌"""
+    """GP API endpoint auth — read session token from X-GP-Token header"""
     if not x_gp_token or not verify_gp_token(x_gp_token):
-        raise HTTPException(status_code=403, detail="GP 身份验证失败，请重新登录后台。")
+        raise HTTPException(status_code=403, detail="GP identity verification failed. Please log in again.")
     return True
 
 class VerifyReq(BaseModel): pin: str
@@ -1390,6 +1397,35 @@ def hidden_api(token: str = None):
     if token == "guest":
         return {"status": "access granted", "message": "欢迎初级白客", "flag": "FLAG{robots_are_not_your_enemy}", "next_hint": "检查网页源码中的HTML注释"}
     return {"status": "denied", "message": "需要 token 参数", "hint": "试试 ?token=guest"}
+
+# 🕵️ 隐藏的CTF挑战页面
+@app.get("/ctf", include_in_schema=False)
+def ctf_challenge_page():
+    return HTMLResponse(content="""<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\"><title>CTF挑战入口</title>
+<style>body{background:#0a0e27;color:#0f0;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+.box{text-align:center;border:1px solid #0f0;padding:40px;border-radius:8px;max-width:600px}
+h1{color:#ff0}h2{color:#f0f}.hint{color:#666;margin-top:20px;font-size:12px}
+a{color:#0ff}</style></head><body><div class=\"box\">
+<h1>🕵️ CTF 挑战入口</h1><p>恭喜你找到了隐藏的挑战页面！</p>
+<p>Flag格式: <code>FLAG{...}</code></p>
+<div class=\"hint\">
+<p>📌 第1题: 检查 robots.txt → <a href=\"/robots.txt\">/robots.txt</a></p>
+<p>📌 第2题: 查看此页面源代码 → 右键 → 查看源代码</p>
+<p>📌 第3题: HTTP响应头 → F12 Network</p>
+<p>📌 第4题: 检查Cookie → F12 Application</p>
+<p>📌 第5题: 访问 <a href=\"/hidden-api?token=guest\">/hidden-api?token=guest</a></p>
+<p>📌 第6题: 访问 <a href=\"/secret-panel\">/secret-panel</a> (假的警告)</p>
+<p>📌 第7题: 访问 <a href=\"/backup.zip\">/backup.zip</a></p>
+<!-- FLAG{source_code_is_your_friend} ← 你看，flag就在源码里！ -->
+</div></div></body></html>""")
+
+# 🏆 CTF 排行榜
+@app.get("/api/v1/ctf/leaderboard", include_in_schema=False)
+def ctf_leaderboard(db: Session = Depends(get_db)):
+    flags = db.query(DBCTFFlag).filter(DBCTFFlag.found_by.isnot(None)).all()
+    return {"players": [{"name": f.found_by, "title": f.title, "points": f.points, "found_at": f.found_at.strftime("%m/%d %H:%M") if f.found_at else ""} for f in flags]}
+    flags = db.query(DBCTFFlag).filter(DBCTFFlag.found_by.isnot(None)).all()
+    return {"players": [{"name": f.found_by, "title": f.title, "points": f.points, "found_at": f.found_at.strftime("%m/%d %H:%M") if f.found_at else ""} for f in flags]}
 
 @app.get("/backup.zip", include_in_schema=False)
 def fake_backup():
