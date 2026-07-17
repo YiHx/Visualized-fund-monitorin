@@ -10,12 +10,37 @@
 </head>
 <body class="p-4 md:p-8 font-sans">
 <div id="admin-app" class="max-w-7xl mx-auto space-y-6">
+
+    <!-- GP 身份验证弹窗 -->
+    <div v-if="!isAuthenticated" class="fixed inset-0 bg-black/95 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
+        <div class="bg-gray-900 p-8 rounded-lg border-2 border-yellow-500 w-full max-w-md shadow-[0_0_40px_rgba(234,179,8,0.2)]">
+            <div class="text-center mb-6">
+                <div class="text-5xl mb-4">🛡️</div>
+                <h2 class="text-2xl font-bold text-yellow-500 tracking-widest">GP 身份验证</h2>
+                <p class="text-gray-500 text-sm mt-2">此区域仅限基金管理人访问</p>
+            </div>
+            <input v-model="pinInput" type="password" placeholder="请输入 GP 授权码"
+                   class="w-full bg-black border border-gray-700 rounded p-3 text-white mb-4 text-center tracking-[0.5em] text-lg focus:border-yellow-500 focus:outline-none transition"
+                   @keyup.enter="verifyPin" autofocus>
+            <div v-if="authError" class="text-red-400 text-sm text-center mb-4 bg-red-900/30 border border-red-800 rounded p-2">
+                {{ authError }}
+            </div>
+            <button @click="verifyPin" :disabled="authLoading"
+                    class="w-full bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-3 rounded transition tracking-widest disabled:opacity-50 disabled:cursor-not-allowed">
+                {{ authLoading ? '验证中...' : '解锁控制台' }}
+            </button>
+        </div>
+    </div>
+
     <header class="border-b border-yellow-700/50 pb-4 flex justify-between items-end">
         <div>
             <h1 class="text-3xl font-bold text-yellow-500 tracking-wider">GP 全权控制台</h1>
             <p class="text-sm text-gray-500 mt-2">已开启全局心跳监听：自动同步前台动态，实时指挥</p>
         </div>
         <div class="flex items-center space-x-3">
+            <button v-if="isAuthenticated" @click="logout" class="text-xs text-gray-500 hover:text-red-400 border border-gray-700 hover:border-red-800 px-2 py-1 rounded transition">
+                🔒 锁定控制台
+            </button>
             <span class="relative flex h-3 w-3">
               <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
@@ -223,17 +248,83 @@
             const pendingRequests = ref([]);
             const messages = ref([]);
             const ledger = ref([]);
-            const allocations = ref([]); 
-            const quarterlyInfo = ref({}); 
-            const notices = ref([]); 
+            const allocations = ref([]);
+            const quarterlyInfo = ref({});
+            const notices = ref([]);
             const notificationLogs = ref([]);
             const onlyFailedLogs = ref(false);
             const retryingLogId = ref(null);
+
+            // GP 认证状态
+            const isAuthenticated = ref(false);
+            const pinInput = ref('');
+            const authError = ref('');
+            const authLoading = ref(false);
+            let gpToken = null;  // 会话令牌，所有 GP API 调用都需要携带
+
+            // 给所有 GP API 请求自动附加鉴权头
+            const gpFetch = async (url, options = {}) => {
+                if (!gpToken) throw new Error('Not authenticated');
+                const headers = options.headers || {};
+                headers['X-GP-Token'] = gpToken;
+                return fetch(url, { ...options, headers });
+            };
             
             const injectForm = ref({ tx_type: 'PRINCIPAL', amount: '', description: '' });
             const allocForm = ref({ asset: '', amount: '' }); 
             const adjustForm = ref({ action: 'UP', amount: '', description: '' }); 
             const noticeForm = ref('');
+
+            // GP 身份验证方法
+            const verifyPin = async () => {
+                if (!pinInput.value.trim()) {
+                    authError.value = '请输入授权码';
+                    return;
+                }
+                authLoading.value = true;
+                authError.value = '';
+                try {
+                    const res = await fetch(`${API_BASE}/gp/verify`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ pin: pinInput.value.trim() })
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        gpToken = data.gp_token;  // 保存会话令牌
+                        isAuthenticated.value = true;
+                        pinInput.value = '';
+                        authError.value = '';
+                        // 认证成功后立即拉取数据
+                        runPolling();
+                        restartPolling();
+                    } else {
+                        const data = await res.json();
+                        authError.value = data.detail || '授权码错误，请重试';
+                        pinInput.value = '';
+                    }
+                } catch (e) {
+                    authError.value = '网络错误，请检查连接后重试';
+                } finally {
+                    authLoading.value = false;
+                }
+            };
+
+            const logout = () => {
+                if (confirm('确定要锁定控制台吗？')) {
+                    // 通知后端销毁令牌
+                    if (gpToken) {
+                        const fd = new FormData();
+                        fd.append('token', gpToken);
+                        fetch(`${API_BASE}/gp/logout`, { method: 'POST', body: fd }).catch(() => {});
+                    }
+                    gpToken = null;
+                    isAuthenticated.value = false;
+                    pinInput.value = '';
+                    authError.value = '';
+                    if (pollTimer) clearInterval(pollTimer);
+                }
+            };
 
             const POLL_VISIBLE_MS = 4000;
             const POLL_HIDDEN_MS = 15000;
@@ -327,7 +418,7 @@
                 const t = new Date().getTime(); 
                 try {
                     // 1. 抓取审批工单（保护打字草稿）
-                    const newRequests = await fetchJsonWithRetry(`${API_BASE}/gp/pending_requests?t=${t}`);
+                    const newRequests = await fetchJsonWithRetry(`${API_BASE}/gp/pending_requests?t=${t}`, { headers: { 'X-GP-Token': gpToken } });
                     pendingRequests.value = newRequests.map(newReq => {
                         const oldReq = pendingRequests.value.find(r => r.id === newReq.id);
                         if (oldReq) {
@@ -354,8 +445,12 @@
                     quarterlyInfo.value = dashData.quarterly_info; 
                     notices.value = await fetchJsonWithRetry(`${API_BASE}/lp/notices?t=${t}`); 
                     const sf = onlyFailedLogs.value ? 'FAILED' : 'ALL';
-                    notificationLogs.value = await fetchJsonWithRetry(`${API_BASE}/gp/notification_logs?limit=30&status_filter=${sf}&t=${t}`);
-                } catch(e) { ok = false; console.log("拉取更新失败"); }
+                    notificationLogs.value = await fetchJsonWithRetry(`${API_BASE}/gp/notification_logs?limit=30&status_filter=${sf}&t=${t}`, { headers: { 'X-GP-Token': gpToken } });
+                } catch(e) {
+                    ok = false;
+                    if (e.status === 403) { logout(); return false; }
+                    console.log("拉取更新失败");
+                }
                 finally { fetchingAdmin = false; }
                 return ok;
             };
@@ -364,7 +459,8 @@
                 if (!log || !log.id) return;
                 retryingLogId.value = log.id;
                 try {
-                    const res = await fetch(`${API_BASE}/gp/notification_logs/${log.id}/retry`, { method: 'POST' });
+                    const res = await fetch(`${API_BASE}/gp/notification_logs/${log.id}/retry`, { method: 'POST', headers: { 'X-GP-Token': gpToken } });
+                    if(res.status === 403) { logout(); return; }
                     const data = await res.json();
                     if (data.status === 'success') {
                         alert('通知重发成功');
@@ -380,6 +476,7 @@
             };
 
             const runPolling = async () => {
+                if (!isAuthenticated.value) return;
                 const ok = await fetchData();
                 if (ok) markSyncSuccess();
                 else markSyncFailure();
@@ -420,7 +517,8 @@
                 }
                 if(!confirm(`确定要 ${isReject ? '驳回' : '批准'} 这笔工单吗？`)) return;
                 
-                const res = await fetch(`${API_BASE}/gp/process_request/${req.id}?action=${action}&final_amount=${final_amount}&reject_reason=${encodeURIComponent(req.reject_reason || '')}`, { method: 'POST' });
+                const res = await fetch(`${API_BASE}/gp/process_request/${req.id}?action=${action}&final_amount=${final_amount}&reject_reason=${encodeURIComponent(req.reject_reason || '')}`, { method: 'POST', headers: { 'X-GP-Token': gpToken } });
+                if(res.status === 403) { logout(); return; }
                 if(res.ok) alert((await res.json()).message);
                 fetchData();
             };
@@ -428,7 +526,8 @@
             const publishNotice = async () => {
                 if(!confirm("发送后乙方将在前台置顶看到此通知，确定广播吗？")) return;
                 const fd = new FormData(); fd.append('content', noticeForm.value);
-                const res = await fetch(`${API_BASE}/gp/notices`, { method: 'POST', body: fd });
+                const res = await fetch(`${API_BASE}/gp/notices`, { method: 'POST', body: fd, headers: { 'X-GP-Token': gpToken } });
+                if(res.status === 403) { logout(); return; }
                 if(res.ok) {
                     alert((await res.json()).message);
                     noticeForm.value = '';
@@ -438,14 +537,16 @@
 
             const deleteNotice = async (id) => {
                 if(!confirm("确定要撤回这条政令吗？撤回后，乙方前台将立即消失！")) return;
-                const res = await fetch(`${API_BASE}/gp/notices/${id}`, { method: 'DELETE' });
+                const res = await fetch(`${API_BASE}/gp/notices/${id}`, { method: 'DELETE', headers: { 'X-GP-Token': gpToken } });
+                if(res.status === 403) { logout(); return; }
                 if(res.ok) { alert((await res.json()).message); fetchData(); }
             };
 
             const injectFunds = async () => {
                 if(!confirm("确认注入资金？")) return;
                 const fd = new FormData(); fd.append('tx_type', injectForm.value.tx_type); fd.append('amount', injectForm.value.amount); fd.append('description', injectForm.value.description);
-                const res = await fetch(`${API_BASE}/gp/inject_funds`, { method: 'POST', body: fd });
+                const res = await fetch(`${API_BASE}/gp/inject_funds`, { method: 'POST', body: fd, headers: { 'X-GP-Token': gpToken } });
+                if(res.status === 403) { logout(); return; }
                 alert((await res.json()).message); injectForm.value = { tx_type: 'PRINCIPAL', amount: '', description: '' }; fetchData();
             };
 
@@ -453,20 +554,24 @@
                 const actionText = adjustForm.value.action === 'UP' ? '增加' : '扣除';
                 if(!confirm(`确定【${actionText}】 ¥${adjustForm.value.amount} 吗？`)) return;
                 const fd = new FormData(); fd.append('action', adjustForm.value.action); fd.append('amount', adjustForm.value.amount); fd.append('description', adjustForm.value.description);
-                const res = await fetch(`${API_BASE}/gp/adjust_funds`, { method: 'POST', body: fd });
+                const res = await fetch(`${API_BASE}/gp/adjust_funds`, { method: 'POST', body: fd, headers: { 'X-GP-Token': gpToken } });
+                if(res.status === 403) { logout(); return; }
                 if(res.ok) { alert((await res.json()).message); adjustForm.value = { action: 'UP', amount: '', description: '' }; fetchData(); } 
                 else alert((await res.json()).detail);
             };
 
             const submitAllocation = async () => {
                 const fd = new FormData(); fd.append('asset_name', allocForm.value.asset); fd.append('amount', allocForm.value.amount);
-                const res = await fetch(`${API_BASE}/gp/asset_allocation`, { method: 'POST', body: fd });
+                const res = await fetch(`${API_BASE}/gp/asset_allocation`, { method: 'POST', body: fd, headers: { 'X-GP-Token': gpToken } });
+                if(res.status === 403) { logout(); return; }
                 if (!res.ok) alert((await res.json()).detail); else { alert((await res.json()).message); allocForm.value = { asset: '', amount: '' }; fetchData(); }
             };
 
             const toggleQuarterly = async () => {
                 if(!confirm("确定现在放出派息令并开启倒计时吗？")) return;
-                const res = await fetch(`${API_BASE}/gp/toggle_quarterly`, { method: 'POST' }); alert((await res.json()).message); fetchData();
+                const res = await fetch(`${API_BASE}/gp/toggle_quarterly`, { method: 'POST', headers: { 'X-GP-Token': gpToken } });
+                if(res.status === 403) { logout(); return; }
+                alert((await res.json()).message); fetchData();
             };
 
             const initiateCall = () => {
@@ -484,7 +589,8 @@
             const replyMsg = async (msg) => {
                 if (!msg.draftReply) return;
                 const fd = new FormData(); fd.append('reply', msg.draftReply);
-                const res = await fetch(`${API_BASE}/gp/messages/${msg.id}/reply`, { method: 'POST', body: fd });
+                const res = await fetch(`${API_BASE}/gp/messages/${msg.id}/reply`, { method: 'POST', body: fd, headers: { 'X-GP-Token': gpToken } });
+                if(res.status === 403) { logout(); return; }
                 if(res.ok) { alert("回复已发送给乙方。"); fetchData(); }
             };
 
@@ -504,10 +610,11 @@
                 document.body.appendChild(modal);
             };
 
-            onMounted(() => { 
-                runPolling(); 
-                restartPolling();
-                document.addEventListener('visibilitychange', restartPolling);
+            onMounted(() => {
+                // 不自动拉取数据——等待 GP 身份验证通过后再启动轮询
+                document.addEventListener('visibilitychange', () => {
+                    if (isAuthenticated.value) restartPolling();
+                });
             });
 
             watch(onlyFailedLogs, () => {
@@ -519,7 +626,7 @@
                 document.removeEventListener('visibilitychange', restartPolling);
                 if (recoveredBannerTimer) clearTimeout(recoveredBannerTimer);
             });
-            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, notificationLogs, onlyFailedLogs, retryingLogId, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, retryNotification, replyMsg, isImageFileAdmin, isVideoFileAdmin, openMediaModalAdmin, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown }
+            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, notificationLogs, onlyFailedLogs, retryingLogId, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, retryNotification, replyMsg, isImageFileAdmin, isVideoFileAdmin, openMediaModalAdmin, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown, isAuthenticated, pinInput, authError, authLoading, verifyPin, logout }
         }
     }).mount('#admin-app')
 </script>

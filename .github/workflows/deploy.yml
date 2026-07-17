@@ -1,0 +1,88 @@
+name: 🚀 Deploy to Alibaba Cloud
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_restart:
+        description: 'Skip service restart'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔍 Syntax check
+        run: |
+          python3 -m py_compile Main.py video_call_api.py
+          echo "✅ Syntax OK"
+
+      - name: 📦 Upload files
+        uses: easingthemes/ssh-deploy@v5.0.0
+        with:
+          SSH_PRIVATE_KEY: ${{ secrets.ALIYUN_SSH_KEY }}
+          ARGS: "-avz --exclude-from=.deployignore"
+          SOURCE: "./"
+          REMOTE_HOST: ${{ secrets.ALIYUN_HOST }}
+          REMOTE_USER: ${{ secrets.ALIYUN_USER || 'admin' }}
+          REMOTE_PORT: ${{ secrets.ALIYUN_PORT || '22' }}
+          TARGET: /tmp/fund_deploy_ci/
+
+      - name: 🔄 Install & Restart
+        if: ${{ !inputs.skip_restart }}
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.ALIYUN_HOST }}
+          username: ${{ secrets.ALIYUN_USER || 'admin' }}
+          key: ${{ secrets.ALIYUN_SSH_KEY }}
+          port: ${{ secrets.ALIYUN_PORT || '22' }}
+          script_stop: true
+          script: |
+            set -e
+            TMPDIR=/tmp/fund_deploy_ci
+            TARGET=/root
+
+            echo "📋 Syncing to $TARGET..."
+            sudo rsync -av --exclude='family_fund.db' --exclude='uploads/messages/' --exclude='.git' --exclude='__pycache__' $TMPDIR/ $TARGET/
+
+            if [ -f "$TARGET/Main.py" ]; then
+              sudo mv "$TARGET/Main.py" "$TARGET/main.py"
+            fi
+            sudo chown root:root $TARGET/main.py $TARGET/video_call_api.py $TARGET/*.html 2>/dev/null || true
+
+            echo "🔍 Syntax check..."
+            cd $TARGET
+            sudo python3 -m py_compile main.py video_call_api.py && echo "✅ Passed"
+
+            echo "🔄 Restarting..."
+            sudo pkill -f "uvicorn main:app" || true
+            sleep 2
+            cd $TARGET
+            sudo touch server.log && sudo chmod 666 server.log
+            sudo bash -c 'nohup python3 -m uvicorn main:app --host 127.0.0.1 --port 8000 > server.log 2>&1 &'
+            sleep 3
+
+            PID=$(pgrep -f "uvicorn main:app" || echo "")
+            if [ -z "$PID" ]; then
+              echo "❌ Start failed!"
+              sudo tail -30 $TARGET/server.log
+              exit 1
+            fi
+            echo "✅ Running PID=$PID"
+
+            echo -n "GP verify: "
+            curl -s -X POST http://127.0.0.1:8000/api/v1/gp/verify -H "Content-Type: application/json" -d '{"pin":"0828"}' | python3 -c "import sys,json;print('✅' if json.load(sys.stdin).get('status')=='success' else '❌')"
+
+            echo -n "GP guard: "
+            curl -s http://127.0.0.1:8000/api/v1/gp/pending_requests | grep -q "身份验证失败" && echo "✅" || echo "❌"
+
+            rm -rf $TMPDIR
+            echo "✨ Done"

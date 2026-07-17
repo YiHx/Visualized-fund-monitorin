@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, Form, status, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, Form, status, WebSocket, WebSocketDisconnect, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -13,6 +13,8 @@ import shutil
 import secrets
 import requests
 import json
+import hashlib
+import time
 from sqlalchemy.exc import SQLAlchemyError
 
 # ==========================================
@@ -168,7 +170,7 @@ def log_notification_event(title: str, content: str, status: str, response_msg: 
 def notify_gp_wechat(title: str, content: str):
     """通过 PushPlus 发送微信通知。"""
     url = "https://www.pushplus.plus/send"
-    token = os.environ.get("PUSHPLUS_TOKEN", "e92ace8deade436093a43798c81ecddc")
+    token = os.environ.get("PUSHPLUS_TOKEN", "")
 
     if not token:
         print("微信通知发送失败: 未配置 PUSHPLUS_TOKEN")
@@ -320,10 +322,54 @@ def get_quarterly_info(db: Session):
 # 3. 接口路由
 # ==========================================
 class VerifyReq(BaseModel): pin: str
+
 @app.post("/api/v1/lp/verify")
 def verify_lp(req: VerifyReq):
     if req.pin == "0103": return {"status": "success"}
     raise HTTPException(status_code=403, detail="授权码错误。")
+
+# GP 认证 —— 保护后台管理页面
+GP_PIN = os.environ.get("GP_PIN", "0828")
+GP_SESSION_SECRET = os.environ.get("GP_SESSION_SECRET", "family-fund-gp-2024-secret")
+
+# 活跃的 GP 会话令牌（简单内存存储，服务重启后全部失效）
+_valid_gp_tokens: set = set()
+
+def _make_gp_token(pin: str) -> str:
+    """基于 PIN + 密钥 + 时间窗口 生成会话令牌"""
+    raw = f"{pin}:{GP_SESSION_SECRET}:{int(time.time())}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:32]
+
+def verify_gp_token(token: str) -> bool:
+    """校验 GP 会话令牌是否有效"""
+    return token in _valid_gp_tokens
+
+def require_gp_auth(x_gp_token: str = Header(None)):
+    """GP API 端点鉴权 —— 从请求头 X-GP-Token 读取会话令牌"""
+    if not x_gp_token or not verify_gp_token(x_gp_token):
+        raise HTTPException(status_code=403, detail="GP 身份验证失败，请重新登录后台。")
+    return True
+
+class VerifyReq(BaseModel): pin: str
+
+@app.post("/api/v1/lp/verify")
+def verify_lp(req: VerifyReq):
+    if req.pin == "0103": return {"status": "success"}
+    raise HTTPException(status_code=403, detail="授权码错误。")
+
+@app.post("/api/v1/gp/verify")
+def verify_gp(req: VerifyReq):
+    if req.pin == GP_PIN:
+        token = _make_gp_token(req.pin)
+        _valid_gp_tokens.add(token)
+        return {"status": "success", "gp_token": token}
+    raise HTTPException(status_code=403, detail="授权码错误。")
+
+@app.post("/api/v1/gp/logout")
+def gp_logout(token: str = Form(...)):
+    """GP 主动登出，销毁会话令牌"""
+    _valid_gp_tokens.discard(token)
+    return {"status": "success"}
 
 @app.get("/api/v1/dashboard")
 def get_dashboard(db: Session = Depends(get_db)):
@@ -343,14 +389,14 @@ def lp_get_notices(db: Session = Depends(get_db)):
     return [{"id": n.id, "content": n.content, "publish_time": n.publish_time.strftime("%Y-%m-%d %H:%M")} for n in notices]
 
 @app.post("/api/v1/gp/notices")
-def gp_post_notice(content: str = Form(...), db: Session = Depends(get_db)):
+def gp_post_notice(content: str = Form(...), db: Session = Depends(get_db), _: bool = Depends(require_gp_auth)):
     db.add(DBNotice(content=content))
     db.commit()
     return {"status": "success", "message": "全网通知已强势发布！"}
 
 # 👉 新增：GP 撤回通知的绝杀接口
 @app.delete("/api/v1/gp/notices/{notice_id}")
-def gp_delete_notice(notice_id: int, db: Session = Depends(get_db)):
+def gp_delete_notice(notice_id: int, db: Session = Depends(get_db), _: bool = Depends(require_gp_auth)):
     notice = db.query(DBNotice).filter(DBNotice.id == notice_id).first()
     if notice:
         db.delete(notice)
@@ -495,7 +541,7 @@ def lp_get_my_requests(db: Session = Depends(get_db)):
     return req_list
 
 @app.post("/api/v1/gp/messages/{msg_id}/reply")
-def reply_message(msg_id: int, reply: str = Form(...), db: Session = Depends(get_db)):
+def reply_message(msg_id: int, reply: str = Form(...), db: Session = Depends(get_db), _: bool = Depends(require_gp_auth)):
     msg = db.query(DBMessage).filter(DBMessage.id == msg_id).first()
     if msg:
         msg.reply = reply
@@ -504,12 +550,12 @@ def reply_message(msg_id: int, reply: str = Form(...), db: Session = Depends(get
     return {"status": "success"}
 
 @app.post("/api/v1/gp/inject_funds")
-def gp_inject_funds(amount: float = Form(...), tx_type: str = Form(...), description: str = Form(...), db: Session = Depends(get_db)):
+def gp_inject_funds(amount: float = Form(...), tx_type: str = Form(...), description: str = Form(...), db: Session = Depends(get_db), _: bool = Depends(require_gp_auth)):
     db.add(DBTransaction(tx_type=tx_type, amount=amount, description=description)); db.commit()
     return {"status": "success", "message": f"资金注入成功！已将 ¥{amount} 并入 {tx_type} 引擎。"}
 
 @app.post("/api/v1/gp/adjust_funds")
-def gp_adjust_funds(action: str = Form(...), amount: float = Form(...), description: str = Form(...), db: Session = Depends(get_db)):
+def gp_adjust_funds(action: str = Form(...), amount: float = Form(...), description: str = Form(...), db: Session = Depends(get_db), _: bool = Depends(require_gp_auth)):
     if amount <= 0: raise HTTPException(status_code=400, detail="调整金额必须大于0")
     tx_type = "ADJUST_UP" if action == "UP" else "ADJUST_DOWN"
     db.add(DBTransaction(tx_type=tx_type, amount=amount, description=f"【上帝模式强控】{description}"))
@@ -518,14 +564,14 @@ def gp_adjust_funds(action: str = Form(...), amount: float = Form(...), descript
     return {"status": "success", "message": f"强控执行完毕：已从资金池{verb} ¥{amount}。"}
 
 @app.post("/api/v1/gp/toggle_quarterly")
-def toggle_quarterly(db: Session = Depends(get_db)):
+def toggle_quarterly(db: Session = Depends(get_db), _: bool = Depends(require_gp_auth)):
     active = db.query(DBQuarterlyEvent).filter(DBQuarterlyEvent.status == "ACTIVE").all()
     for a in active: a.status = "EXPIRED"
     db.add(DBQuarterlyEvent(issued_at=datetime.now(), status="ACTIVE")); db.commit()
     return {"status": "success", "message": "72小时倒计时派息令已强势发布！"}
 
 @app.get("/api/v1/gp/pending_requests")
-def gp_get_pending_requests(db: Session = Depends(get_db)):
+def gp_get_pending_requests(db: Session = Depends(get_db), _: bool = Depends(require_gp_auth)):
     requests = db.query(DBRequest).filter(DBRequest.status == "PENDING").order_by(desc(DBRequest.req_date), desc(DBRequest.id)).all()
     return [{
         "id": r.id,
@@ -538,7 +584,7 @@ def gp_get_pending_requests(db: Session = Depends(get_db)):
     } for r in requests]
 
 @app.get("/api/v1/gp/notification_logs")
-def gp_get_notification_logs(limit: int = 30, status_filter: str = "ALL", db: Session = Depends(get_db)):
+def gp_get_notification_logs(limit: int = 30, status_filter: str = "ALL", db: Session = Depends(get_db), _: bool = Depends(require_gp_auth)):
     safe_limit = max(1, min(limit, 100))
     query = db.query(DBNotificationLog)
     sf = (status_filter or "ALL").upper()
@@ -555,7 +601,7 @@ def gp_get_notification_logs(limit: int = 30, status_filter: str = "ALL", db: Se
     } for item in logs]
 
 @app.post("/api/v1/gp/notification_logs/{log_id}/retry")
-def gp_retry_notification(log_id: int, db: Session = Depends(get_db)):
+def gp_retry_notification(log_id: int, db: Session = Depends(get_db), _: bool = Depends(require_gp_auth)):
     item = db.query(DBNotificationLog).filter(DBNotificationLog.id == log_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="通知日志不存在")
@@ -566,7 +612,7 @@ def gp_retry_notification(log_id: int, db: Session = Depends(get_db)):
     return {"status": "error", "message": "重发失败，请查看最新日志"}
 
 @app.post("/api/v1/gp/process_request/{req_id}")
-def gp_process_request(req_id: int, action: str, final_amount: float = 0.0, reject_reason: str = "", db: Session = Depends(get_db)):
+def gp_process_request(req_id: int, action: str, final_amount: float = 0.0, reject_reason: str = "", db: Session = Depends(get_db), _: bool = Depends(require_gp_auth)):
     req = db.query(DBRequest).filter(DBRequest.id == req_id).first()
     if action == "REJECT": 
         req.status = "REJECTED"
@@ -581,7 +627,7 @@ def gp_process_request(req_id: int, action: str, final_amount: float = 0.0, reje
     return {"status": "success", "message": f"工单审批完成！已执行 {action} 指令。"}
 
 @app.post("/api/v1/gp/asset_allocation")
-def gp_update_allocation(asset_name: str = Form(...), amount: float = Form(...), db: Session = Depends(get_db)):
+def gp_update_allocation(asset_name: str = Form(...), amount: float = Form(...), db: Session = Depends(get_db), _: bool = Depends(require_gp_auth)):
     nav = calculate_system_nav(db, date.today())
     existing = db.query(DBAssetAllocation).filter(DBAssetAllocation.asset_name == asset_name).first()
     if amount <= 0:

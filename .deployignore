@@ -1,0 +1,14 @@
+# 部署时排除的文件和目录
+.git/
+.gitignore
+__pycache__/
+*.pyc
+.env.deploy
+.deployignore
+family_fund.db
+uploads/messages/*
+app.log
+nohup.out
+.DS_Store
+*.swp
+*.swo

@@ -1,14 +1,19 @@
-# 通话功能部署检查清单
+# 项目部署文档
 
-## ✅ 后端实现完成
-
-### 文件结构
+## 📁 完整文件结构
 ```
-main.py                    # 主应用程序
-video_call_api.py         # 通话 API 和逻辑模块
-dashboard.html            # 乙方（前台）UI
-admin.html               # 甲方（后台）UI  
-video_call.html          # 通话界面
+Main.py                    # FastAPI 主程序（所有 API 端点 + 业务逻辑）
+video_call_api.py         # WebRTC 通话模块（信令 + CallManager）
+dashboard.html            # 乙方（LP）前台 UI
+admin.html               # 甲方（GP）后台 UI（含 GP 身份验证）
+video_call.html          # 音视频通话界面
+family_fund.db           # SQLite 数据库
+deploy.sh                # 🆕 一键部署脚本
+.env.deploy.example      # 🆕 部署配置模板
+.deployignore            # 🆕 部署排除文件列表
+.github/workflows/       # 🆕 GitHub Actions CI/CD
+  deploy.yml             # 🆕 自动部署工作流
+restart_server.sh        # 服务器端重启脚本
 ```
 
 ### 核心实现
@@ -212,7 +217,54 @@ sudo journalctl -u family_fund.service -f
 3. 进入视频通话界面 → 音视频自动初始化
 4. 与乙方进行对话
 
+## 🔐 GP 后台安全机制（🆕 2026-07-17）
+
+### 问题
+原来 `/admin` 页面没有任何认证保护，任何人知道 URL 即可直接访问 GP 全权控制台，
+执行资金注入、调账、审批工单等敏感操作。所有 `/api/v1/gp/*` 端点也完全裸奔。
+
+### 修复内容
+| 层级 | 修复前 | 修复后 |
+|------|--------|--------|
+| 前端 UI | ❌ 无任何保护，直接显示 | ✅ 全屏 PIN 登录弹窗 |
+| 后端 API | ❌ 无鉴权，curl 可直接调用 | ✅ X-GP-Token 会话令牌校验 |
+| 登出机制 | ❌ 不存在 | ✅ 前端锁定 + 后端令牌销毁 |
+
+### GP 认证流程
+1. 访问 `/admin` → 显示全屏登录弹窗
+2. 输入 GP PIN → `POST /api/v1/gp/verify` → 返回会话令牌
+3. 所有后续请求携带 `X-GP-Token` 请求头
+4. 令牌失效（403）→ 自动弹出登录界面
+5. 点击「锁定控制台」→ 销毁令牌 + 停止轮询
+- **默认 GP PIN**：`0828`（可通过环境变量 `GP_PIN` 修改）
+- **LP PIN**：`0103`（不变）
+
+## 🚀 一键部署（🆕 2026-07-17）
+
+### 本地部署脚本
+```bash
+# 1. 配置
+cp .env.deploy.example .env.deploy
+nano .env.deploy    # 填入 DEPLOY_SERVER=root@你的IP
+
+# 2. 部署
+./deploy.sh                    # 完整部署
+./deploy.sh --dry-run          # 预览模式
+./deploy.sh --skip-restart     # 只上传文件
+```
+
+### GitHub Actions CI/CD
+1. GitHub 仓库 → Settings → Secrets → Actions 添加：
+   - `ALIYUN_HOST`、`ALIYUN_USER`、`ALIYUN_SSH_KEY`
+2. 推送 `main` 分支 → 自动部署
+3. 也可在 Actions 页面手动触发
+
+### SSH 免密配置
+```bash
+ssh-keygen -t ed25519 -C "deploy@family-fund"
+ssh-copy-id root@你的服务器IP
+```
+
 ---
-**部署日期**：[待部署]
-**最后更新**：2024-01-XX
-**状态**：✅ 代码完成，⏳ 等待微信集成和云部署测试
+**最后更新**：2026-07-17
+**状态**：✅ GP 安全修复完成，✅ 部署自动化就绪

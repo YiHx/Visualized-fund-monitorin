@@ -1,0 +1,25 @@
+# 部署敏感配置
+.env.deploy
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 日志
+app.log
+nohup.out
+
+# 上传文件（本地测试用）
+uploads/messages/*
+!uploads/messages/.gitkeep
+
+# 数据库（包含敏感财务数据，不要提交）
+family_fund.db
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
