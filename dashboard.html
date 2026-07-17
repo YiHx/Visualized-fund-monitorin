@@ -89,7 +89,7 @@
         <div>
             <h1 class="text-2xl font-bold text-gray-200 tracking-widest">底层资产监控系统</h1>
             <p class="text-sm text-gray-400 mt-1 flex items-center">
-                当前状态: {{ isAuthenticated ? '全量功能已解锁' : '只读模式' }} {{ navMood }}
+                当前状态: {{ isAuthenticated ? '全量功能已解锁' : '只读模式' }} {{ navMood }} <span v-if="specialDayText" class="text-yellow-400 text-xs">| {{ specialDayText }}</span>
                 <span class="ml-3 flex items-center bg-gray-800 px-2 py-0.5 rounded text-xs">
                     <span class="animate-pulse h-2 w-2 rounded-full bg-emerald-500 mr-1"></span> 实时同步
                 </span>
@@ -659,6 +659,81 @@
     });
 
     // ══════════════════════════════════════════
+    // 🥚 时间彩蛋：早晚问候 + 节日检测
+    // ══════════════════════════════════════════
+    const getTimeGreeting = () => { const h = new Date().getHours(); if (h < 6) return '🌙 夜深了，NAV还在守护...'; if (h < 9) return '🌅 早上好！NAV又涨了一夜 📈'; if (h < 12) return '☀️ 上午好！抽奖的最佳时间 ✨'; if (h < 14) return '🍱 午休时间，NAV也在休息~'; if (h < 18) return '🌤️ 下午好！今天中奖了吗？'; if (h < 21) return '🌆 晚间黄金时段！抽奖运势UP ⬆️'; return '🌙 夜深了，凛ちゃん已开启守护模式 💎'; };
+    const getSpecialDay = () => { const d = new Date(); const m = d.getMonth()+1; const day = d.getDate(); if (m===1&&day===1) return '🎍 新年快乐！财运亨通！'; if (m===1&&day===3) return '🎂 今天是本系统创始纪念日！'; if (m===2&&day===14) return '💝 Happy Valentine! NAV爱你'; if (m===6&&day===1) return '🎈 儿童节快乐！弟弟永远年轻！'; if (m===8&&day===28) return '🎂 特殊的日子！GP心情极好！'; if (m===10&&day===3) return '🎂 又一个特殊的日子！抽奖中奖率翻倍！'; if (m===12&&day===25) return '🎄 圣诞快乐！NAV是最好的礼物！'; if (d.getDay()===5) return '🎉 TGIF！周末前最后一抽！'; return null; };
+
+    // ══════════════════════════════════════════
+    // 🥚 页面抖动玩笑（极低概率，每5分钟检测一次）
+    // ══════════════════════════════════════════
+    let shakeCheck = 0;
+    setInterval(() => {
+        shakeCheck++;
+        if (shakeCheck % 60 !== 42) return; // ~每5分钟一次机会
+        if (Math.random() > 0.03) return;   // 3%几率真触发
+        document.body.style.transform = 'translateX(3px)';
+        setTimeout(() => { document.body.style.transform = ''; }, 80);
+        setTimeout(() => { document.body.style.transform = 'translateX(-3px)'; }, 160);
+        setTimeout(() => { document.body.style.transform = ''; sfx.coin(); }, 240);
+        console.log('%c😂 地震です！NAV没事，虚惊一场~', 'color:#fbbf24;font-size:14px;');
+    }, 5000);
+
+    // ══════════════════════════════════════════
+    // 🥚 输入「help」— 伪终端
+    // ══════════════════════════════════════════
+    let helpTyped = '';
+    document.addEventListener('keydown', (e) => {
+        helpTyped += e.key.toLowerCase();
+        if (helpTyped.length > 4) helpTyped = helpTyped.slice(-4);
+        if (helpTyped === 'help') {
+            helpTyped = '';
+            console.log('%c╔═══════════════════════════════════════════╗', 'color:#34d399;');
+            console.log('%c║ 💻 NAV TERMINAL v2.0                       ║', 'color:#34d399;');
+            console.log('%c║ > help                                     ║', 'color:#fbbf24;');
+            console.log('%c║ Available commands:                        ║', 'color:#94a3b8;');
+            console.log('%c║   nav    - 查看当前净值                    ║', 'color:#94a3b8;');
+            console.log('%c║   draw   - 抽奖运势预测                    ║', 'color:#94a3b8;');
+            console.log('%c║   whoami - 显示当前身份                    ║', 'color:#94a3b8;');
+            console.log('%c║   exit   - 退出终端                        ║', 'color:#94a3b8;');
+            console.log('%c╚═══════════════════════════════════════════╝', 'color:#34d399;');
+        }
+    });
+
+    // ══════════════════════════════════════════
+    // 🥚 夏天（梅雨季彩蛋）
+    // ══════════════════════════════════════════
+    if (new Date().getMonth() >= 6 && new Date().getMonth() <= 8) {
+        console.log('%c🌧️ 梅雨季节预警：NAV可能受潮，请注意晾晒 ☀️', 'color:#60a5fa;font-size:11px;');
+    }
+
+    // ══════════════════════════════════════════
+    // 🥚 页面滚动到底彩蛋
+    // ══════════════════════════════════════════
+    window.addEventListener('scroll', () => {
+        const nearBottom = window.innerHeight + window.scrollY >= document.body.offsetHeight - 50;
+        if (nearBottom && !window._bottomEggTriggered) {
+            window._bottomEggTriggered = true;
+            console.log('%c🍪 你滚到了页面底部！这是给你的小饼干~', 'color:#fbbf24;font-size:14px;');
+            setTimeout(() => { window._bottomEggTriggered = false; }, 5000);
+        }
+    });
+
+    // ══════════════════════════════════════════
+    // 🥚 随机标题彩蛋（1.5%概率每30秒）
+    // ══════════════════════════════════════════
+    const sillyTitles = ['💎 凛 Protection Active', '( ﾟ∀ﾟ)o彡 NAV！NAV！', '🐬 So Long, and Thanks for All the Fish',
+        '⚡ Unlimited Blade Works - NAV Edition', '🔮 卜卦中...今日宜抽奖', '(つ✧ω✧)つ NAV抱抱~',
+        '🏴‍☠️ 海盗模式：你的NAV就是我的NAV', '🎌 令呪発動！', 'ヽ(•̀ω•́ )ゝ NAV UP!!'];
+    setInterval(() => {
+        if (Math.random() < 0.015 && !document.hidden) {
+            const silly = sillyTitles[Math.floor(Math.random()*sillyTitles.length)];
+            document.title = silly;
+            setTimeout(() => { document.title = tabTitles[tabTitleIdx % tabTitles.length]; }, 3000);
+        }
+    }, 30000);
+
+    // ══════════════════════════════════════════
     // ⏰ 幸运时间系统
     // ══════════════════════════════════════════
     const isLuckyTime = () => {
@@ -838,6 +913,7 @@
             const lottery = ref({ enabled: true, cost: 5, current_nav: 0, can_play: false, prizes: [], recent_records: [], drawing: false, spinning: false, result: null, resultType: '', resultName: '', resultIcon: '', resultValue: 0, resultMessage: '', newNav: 0 });
             const luckyActive = ref(false);
             const drawCount = ref(0);
+            const specialDayText = ref(getSpecialDay());
 
             const fetchLotteryStatus = async () => {
                 try {
@@ -1490,7 +1566,7 @@
                 navData, allocations, allocationMeta, limitStatus, quarterlyInfo, notices,
                 navDisplay, navMood, clickNav, isAuthenticated, showAuthModal, pinInput, verifyPin, closeAuthModal, logout, initiateCall,
                 showEncourage, encourageText, nextEncourage, fortuneText, showFortune, drawFortune,
-                luckyActive, drawCount,
+                luckyActive, drawCount, specialDayText,
                 showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall,
                 lottery, doLotteryDraw,
                 form, alphaForm, fileInput, msgInput, msgFileInput, selectedMessageFile, messages, myRequests,
