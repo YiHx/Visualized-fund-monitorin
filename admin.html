@@ -517,7 +517,6 @@
                 if (!pinInput.value) { authError.value = '请先输入PIN'; return; }
                 authLoading.value = true; authError.value = '';
                 try {
-                    // 先验证 PIN
                     const vRes = await fetch(`${API_BASE}/gp/verify`, {
                         method:'POST', headers:{'Content-Type':'application/json'},
                         body: JSON.stringify({pin: pinInput.value.trim()})
@@ -525,25 +524,62 @@
                     if (!vRes.ok) { authError.value = 'PIN错误，无法注册指纹'; authLoading.value = false; return; }
                     const vData = await vRes.json();
 
-                    // 创建 WebAuthn 凭证
                     const cred = await navigator.credentials.create({
                         publicKey: {
                             challenge: new Uint8Array(32),
                             rp: { name: 'Family Fund Monitor', id: window.location.hostname },
                             user: { id: new Uint8Array(16), name: 'gp', displayName: 'GP Admin' },
                             pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
-                            authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'preferred', residentKey: 'preferred' },
+                            authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'preferred' },
                             timeout: 60000, attestation: 'none'
                         }
                     });
                     const response = cred.response;
-                    const pubKey = response.getPublicKey();
-                    let pkBytes = new Uint8Array(pubKey);
-                    if (pkBytes[0] === 0x04) {
-                        const keyLen = (pkBytes.length - 1) / 2;
-                        pkBytes = pkBytes.slice(1);
-                        const x = Array.from(pkBytes.slice(0, keyLen)).map(b=>b.toString(16).padStart(2,'0')).join('');
-                        const y = Array.from(pkBytes.slice(keyLen)).map(b=>b.toString(16).padStart(2,'0')).join('');
+                    const pkBytes = new Uint8Array(response.getPublicKey());
+
+                    // 解析 DER 编码的 SubjectPublicKeyInfo，提取 P-256 x/y 坐标
+                    let x = '', y = '';
+                    const extractXY = (buf) => {
+                        // SPKI: 30 59 30 13 06 07 2a8648ce3d0201 06 08 2a8648ce3d030107 03 42 00 04 [32B x] [32B y]
+                        // 找到最后的 BIT STRING (tag 0x03) 并从中提取坐标
+                        let pos = 0;
+                        const readTag = () => { const t = buf[pos]; pos++; return t; };
+                        const readLen = () => {
+                            let l = buf[pos]; pos++;
+                            if (l >= 128) {
+                                const numOctets = l & 0x7F;
+                                l = 0;
+                                for (let i = 0; i < numOctets; i++) { l = (l << 8) | buf[pos]; pos++; }
+                            }
+                            return l;
+                        };
+                        const skipTLV = () => { readTag(); const l = readLen(); pos += l; };
+
+                        // SEQUENCE (0x30) - outer
+                        if (readTag() !== 0x30) return false;
+                        const outerLen = readLen();
+                        const afterOuter = pos + outerLen;
+
+                        // SEQUENCE (0x30) - AlgorithmIdentifier
+                        skipTLV();
+
+                        // BIT STRING (0x03) - contains the public key point
+                        if (readTag() !== 0x03) return false;
+                        const bitStringLen = readLen();
+                        const unusedBits = buf[pos]; pos++; // should be 0
+                        if (buf[pos] === 0x04) { // uncompressed point
+                            pos++; // skip 0x04
+                            const coordLen = (bitStringLen - 2); // minus unusedBits byte and 0x04 byte
+                            const halfLen = coordLen / 2;
+                            x = Array.from(buf.slice(pos, pos + halfLen)).map(b=>b.toString(16).padStart(2,'0')).join('');
+                            pos += halfLen;
+                            y = Array.from(buf.slice(pos, pos + halfLen)).map(b=>b.toString(16).padStart(2,'0')).join('');
+                            return true;
+                        }
+                        return false;
+                    };
+
+                    if (extractXY(pkBytes) && x && y) {
                         const fd = new FormData();
                         fd.append('credential', cred.id);
                         fd.append('x', x); fd.append('y', y);
@@ -555,10 +591,14 @@
                             authStep.value = 'fingerprint';
                             webauthnReady.value = true;
                         } else {
-                            authError.value = '指纹注册失败，请重试';
+                            const ed = await regRes.json();
+                            authError.value = ed.detail || '指纹注册失败，请重试';
                         }
                     } else {
-                        authError.value = '不支持的密钥格式';
+                        // 调试：打印前几个字节帮助排查
+                        const hexPreview = Array.from(pkBytes.slice(0, 10)).map(b=>b.toString(16).padStart(2,'0')).join(' ');
+                        authError.value = '无法解析密钥格式（' + hexPreview + '...），请重试';
+                        console.error('SPKI parse failed. First bytes:', Array.from(pkBytes).map(b=>'0x'+b.toString(16).padStart(2,'0')).join(' '));
                     }
                 } catch(e) {
                     authError.value = '注册失败: ' + (e.message || '请确保设备支持指纹/面容');
@@ -569,6 +609,13 @@
 
             const startFingerprint = () => { authStep.value = 'fingerprint'; authError.value = ''; };
 
+            const _b64decode_buf = (s) => {
+                s = s.replace(/-/g, '+').replace(/_/g, '/');
+                while (s.length % 4) s += '=';
+                const raw = atob(s);
+                return new Uint8Array(raw.split('').map(c => c.charCodeAt(0)));
+            };
+
             const doFingerprintAuth = async () => {
                 authLoading.value = true; authError.value = '';
                 try {
@@ -576,9 +623,17 @@
                     const rd = await creds.json();
                     if (!rd.has_credential) { authStep.value = 'pin'; authLoading.value = false; return; }
 
+                    // 构建 allowCredentials（从服务器拉取已注册的凭证ID列表）
+                    const allowCreds = (rd.credential_ids || []).map(cid => ({
+                        type: 'public-key',
+                        id: _b64decode_buf(cid)
+                    }));
+
                     const cred = await navigator.credentials.get({
-                        publicKey: { challenge: new Uint8Array(32), timeout: 60000,
-                            allowCredentials: [], userVerification: 'preferred' }
+                        publicKey: {
+                            challenge: new Uint8Array(32), timeout: 60000,
+                            allowCredentials: allowCreds, userVerification: 'preferred'
+                        }
                     });
                     const response = cred.response;
                     const authData = new Uint8Array(response.authenticatorData);

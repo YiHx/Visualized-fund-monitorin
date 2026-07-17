@@ -604,11 +604,12 @@ def gp_webauthn_register(credential: str = Form(...), x: str = Form(...), y: str
 
 @app.get("/api/v1/gp/webauthn/ready")
 def gp_webauthn_ready():
-    """检查是否有已注册的指纹凭证"""
+    """检查是否有已注册的指纹凭证，返回凭证ID列表"""
     db = SessionLocal()
     try:
-        count = db.query(DBWebAuthnCred).count()
-        return {"has_credential": count > 0}
+        creds = db.query(DBWebAuthnCred).all()
+        return {"has_credential": len(creds) > 0,
+                "credential_ids": [c.credential_id for c in creds]}
     finally:
         db.close()
 
