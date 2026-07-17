@@ -75,6 +75,36 @@
         </div>
     </div>
 
+    <!-- 🎥 音视频通话弹窗 -->
+    <div v-if="showCallModal" class="fixed inset-0 bg-[#0a0e27] z-[80] flex flex-col">
+        <!-- 顶部状态栏 -->
+        <div class="text-center py-3 px-4" :class="callStatusClass" id="lpCallStatusBar">
+            <span id="lpCallStatusIcon">{{ callStatusIcon }}</span>
+            <span class="ml-2 text-sm" id="lpCallStatusText">{{ callStatusText }}</span>
+        </div>
+        <!-- 视频容器 -->
+        <div class="flex-1 relative bg-black mx-4 rounded-xl overflow-hidden" style="min-height:0">
+            <video id="lpRemoteVideo" class="absolute inset-0 w-full h-full object-cover" playsinline autoplay></video>
+            <div class="absolute top-3 left-3 bg-black/60 px-3 py-1 rounded text-xs text-white z-10">甲方</div>
+            <video id="lpLocalVideo" class="absolute bottom-3 right-3 w-1/4 aspect-video border-2 border-emerald-400 rounded-lg bg-black object-cover z-10" playsinline autoplay muted></video>
+        </div>
+        <!-- 控制栏 -->
+        <div class="flex justify-center items-center gap-5 py-5">
+            <button id="lpMicBtn" class="w-14 h-14 rounded-full bg-emerald-500 text-white text-2xl flex items-center justify-center hover:scale-110 transition shadow-lg">🎤</button>
+            <button id="lpCameraBtn" class="w-14 h-14 rounded-full bg-blue-500 text-white text-2xl flex items-center justify-center hover:scale-110 transition shadow-lg">📹</button>
+            <button @click="hangupCall" class="bg-red-600 hover:bg-red-500 text-white font-bold px-6 py-3 rounded-lg text-sm transition shadow-lg flex items-center gap-2">
+                ✕ 挂断
+            </button>
+        </div>
+        <!-- 通话统计 -->
+        <div class="grid grid-cols-4 gap-3 px-4 pb-4 text-sm max-w-2xl mx-auto w-full">
+            <div class="bg-gray-900 p-3 rounded border border-gray-700 text-center"><div class="text-gray-400 text-xs">延迟</div><div class="font-mono text-emerald-400 text-sm" id="lpLatency">-- ms</div></div>
+            <div class="bg-gray-900 p-3 rounded border border-gray-700 text-center"><div class="text-gray-400 text-xs">分辨率</div><div class="font-mono text-emerald-400 text-sm" id="lpResolution">-- x --</div></div>
+            <div class="bg-gray-900 p-3 rounded border border-gray-700 text-center"><div class="text-gray-400 text-xs">帧率</div><div class="font-mono text-emerald-400 text-sm" id="lpFrameRate">-- fps</div></div>
+            <div class="bg-gray-900 p-3 rounded border border-gray-700 text-center"><div class="text-gray-400 text-xs">连接</div><div class="font-mono text-emerald-400 text-sm" id="lpConnState">等待中</div></div>
+        </div>
+    </div>
+
     <div class="bg-gray-800 p-8 rounded-lg border border-gray-700 shadow-lg text-center relative overflow-hidden transition-all">
         <div class="absolute top-0 left-1/2 transform -translate-x-1/2 w-full h-1 bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.8)]"></div>
         <h2 class="text-gray-400 text-sm mb-4">底层资产理论应得总值 (R_total)</h2>
@@ -451,53 +481,244 @@
 
             const closeAuthModal = () => { showAuthModal.value = false; pinInput.value = ''; };
 
-            const initiateCall = async () => {
+            // ───── 视频通话（页面内弹窗模式）─────
+            const showCallModal = ref(false);
+            const callStatusText = ref('');
+            const callStatusIcon = ref('📞');
+            const callStatusClass = ref('status-bar');
+            let callPeerConnection = null;
+            let callLocalStream = null;
+            let callWebSocket = null;
+            let callMicEnabled = true;
+            let callCameraEnabled = true;
+            let callStatsTimer = null;
+            let callPendingCandidates = [];
+            let callRemoteDescSet = false;
+            let callHasSentOffer = false;
+            let currentCallId = null;
+
+            const callStyleEl = document.createElement('style');
+            callStyleEl.textContent = `
+                #lpCallStatusBar.status-bar { background: rgba(16,185,129,0.1); border: 1px solid #10b981; border-radius: 8px; color: #f8fafc; }
+                #lpCallStatusBar.status-bar.error { background: rgba(239,68,68,0.1); border-color: #ef4444; color: #ef4444; }
+                #lpCallStatusBar.status-bar.ringing { background: rgba(59,130,246,0.15); border-color: #3b82f6; color: #93c5fd; animation: pulse 2s infinite; }
+                @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.6; } }
+            `;
+            document.head.appendChild(callStyleEl);
+
+            const updateCallStatus = (msg, type = 'normal') => {
+                callStatusText.value = msg;
+                callStatusIcon.value = type === 'ringing' ? '📞' : type === 'error' ? '⚠️' : '🔗';
+                callStatusClass.value = 'status-bar' + (type === 'error' ? ' error' : type === 'ringing' ? ' ringing' : '');
+                const el = document.getElementById('lpCallStatusText');
+                if (el) el.textContent = msg;
+            };
+
+            const hangupCall = () => {
+                callLocalStream?.getTracks().forEach(t => t.stop());
+                callPeerConnection?.close();
+                callWebSocket?.close();
+                if (callStatsTimer) clearInterval(callStatsTimer);
+                showCallModal.value = false;
+                callHasSentOffer = false;
+                callRemoteDescSet = false;
+                callPendingCandidates = [];
+                currentCallId = null;
+            };
+
+            const startCallStats = () => {
+                callStatsTimer = setInterval(async () => {
+                    if (!callPeerConnection) return;
+                    try {
+                        const stats = await callPeerConnection.getStats();
+                        let latency = '--', resolution = '-- x --', frameRate = '--';
+                        stats.forEach(r => {
+                            if (r.type === 'inbound-rtp' && r.mediaType === 'video') {
+                                latency = r.roundTripTime ? Math.round(r.roundTripTime * 1000) + ' ms' : '-- ms';
+                                resolution = `${r.frameWidth || '--'} x ${r.frameHeight || '--'}`;
+                                frameRate = r.framesPerSecond ? Math.round(r.framesPerSecond) + ' fps' : '-- fps';
+                            }
+                        });
+                        const connState = document.getElementById('lpConnState');
+                        if (connState) connState.textContent = callPeerConnection.connectionState || 'unknown';
+                        const dLat = document.getElementById('lpLatency'), dRes = document.getElementById('lpResolution'), dFps = document.getElementById('lpFrameRate');
+                        if (dLat) dLat.textContent = latency;
+                        if (dRes) dRes.textContent = resolution;
+                        if (dFps) dFps.textContent = frameRate;
+                    } catch(e) {}
+                }, 1500);
+            };
+
+            const setupCallPeerConnection = () => {
+                callPeerConnection = new RTCPeerConnection({
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' },
+                        { urls: ['turn:numb.viagenie.ca:3478'], username: 'webrtc@live.com', credential: 'webrtc' },
+                        { urls: ['turn:turn.anyfirewall.com:443?transport=tcp'], username: 'webrtc', credential: 'webrtc' }
+                    ]
+                });
+
+                callLocalStream.getTracks().forEach(t => callPeerConnection.addTrack(t, callLocalStream));
+
+                callPeerConnection.ontrack = (event) => {
+                    const rv = document.getElementById('lpRemoteVideo');
+                    if (rv && event.streams[0]) {
+                        rv.srcObject = event.streams[0];
+                        rv.play?.().catch(() => {});
+                    }
+                    updateCallStatus('对方已接入，通话中...');
+                };
+
+                callPeerConnection.onicecandidate = (event) => {
+                    if (event.candidate && callWebSocket?.readyState === WebSocket.OPEN) {
+                        callWebSocket.send(JSON.stringify({ type: 'ice-candidate', data: event.candidate }));
+                    }
+                };
+
+                callPeerConnection.onconnectionstatechange = () => {
+                    const el = document.getElementById('lpConnState');
+                    if (el) el.textContent = callPeerConnection.connectionState || '--';
+                    if (callPeerConnection.connectionState === 'failed') updateCallStatus('连接失败', 'error');
+                    if (callPeerConnection.connectionState === 'connected') updateCallStatus('通话中...');
+                };
+            };
+
+            const handleCallSignal = async (msg) => {
                 try {
-                    // 1. 向后台发送通话请求
-                    const res = await fetch(`${API_BASE}/lp/initiate_call`, { method: 'POST' });
-                    if (!res.ok) {
-                        alert('发起通话失败，请检查网络');
+                    if (msg.type === 'peer-disconnected') {
+                        updateCallStatus('对方已挂断', 'error');
+                        setTimeout(hangupCall, 2000);
                         return;
                     }
-
-                    const data = await res.json();
-                    const callId = data.call_id;
-                    const callUrl = `/video_call?call_id=${callId}&user_type=lp`;
-
-                    // 2. 弹出确认窗口
-                    alert(`已发送通话请求给甲方，正在等待接听...\n甲方已收到微信提醒。\n请等待30秒...`);
-
-                    // 3. 打开本地通话页面
-                    const callWindow = window.open(callUrl, 'call', 'width=1280,height=720');
-
-                    // 4. 轮询检查通话状态
-                    let timeoutCount = 0;
-                    const pollInterval = setInterval(async () => {
-                        try {
-                            const statusRes = await fetch(`${API_BASE}/check_call_status/${callId}`, { method: 'POST' });
-                            const statusData = await statusRes.json();
-
-                            if (statusData.status === 'TIMEOUT') {
-                                clearInterval(pollInterval);
-                                if (callWindow && !callWindow.closed) {
-                                    callWindow.close();
-                                }
-                                alert('对方可能正在忙，请稍后再拨。');
-                            } else if (statusData.status === 'ACCEPTED') {
-                                clearInterval(pollInterval);
-                                // 通话已接受，通话窗口会自动建立连接
-                                console.log('通话已被接受');
-                            }
-                        } catch (error) {
-                            console.warn('轮询出错:', error);
+                    if (msg.type === 'joined') {
+                        // GP 已加入，如果还没发 offer 则立即发送
+                        if (currentCallId && !callHasSentOffer && callPeerConnection) {
+                            const offer = await callPeerConnection.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+                            await callPeerConnection.setLocalDescription(offer);
+                            callHasSentOffer = true;
+                            callWebSocket.send(JSON.stringify({ type: 'offer', data: offer }));
+                            updateCallStatus('正在建立连接...');
                         }
-                    }, 500); // 每 500ms 检查一次
+                        return;
+                    }
+                    if (msg.type === 'offer' && callPeerConnection) {
+                        await callPeerConnection.setRemoteDescription(new RTCSessionDescription(msg.data));
+                        callRemoteDescSet = true;
+                        for (const c of callPendingCandidates) {
+                            try { await callPeerConnection.addIceCandidate(new RTCIceCandidate(c)); } catch(e) {}
+                        }
+                        callPendingCandidates = [];
+                        const answer = await callPeerConnection.createAnswer();
+                        await callPeerConnection.setLocalDescription(answer);
+                        callWebSocket.send(JSON.stringify({ type: 'answer', data: answer }));
+                        return;
+                    }
+                    if (msg.type === 'answer' && callPeerConnection) {
+                        await callPeerConnection.setRemoteDescription(new RTCSessionDescription(msg.data));
+                        callRemoteDescSet = true;
+                        for (const c of callPendingCandidates) {
+                            try { await callPeerConnection.addIceCandidate(new RTCIceCandidate(c)); } catch(e) {}
+                        }
+                        callPendingCandidates = [];
+                        return;
+                    }
+                    if (msg.type === 'ice-candidate' && callPeerConnection) {
+                        if (callRemoteDescSet) {
+                            try { await callPeerConnection.addIceCandidate(new RTCIceCandidate(msg.data)); } catch(e) {}
+                        } else {
+                            callPendingCandidates.push(msg.data);
+                        }
+                    }
+                } catch(e) { console.warn('信令处理:', e); }
+            };
 
-                    // 30 秒后停止轮询
-                    setTimeout(() => clearInterval(pollInterval), 30000);
+            const initiateCall = async () => {
+                if (showCallModal.value) return;
+                try {
+                    // 1. 后端创建通话
+                    const res = await fetch(`${API_BASE}/lp/initiate_call`, { method: 'POST' });
+                    if (!res.ok) { alert('发起通话失败'); return; }
+                    const data = await res.json();
+                    currentCallId = data.call_id;
+                    callHasSentOffer = false;
+                    callRemoteDescSet = false;
+                    callPendingCandidates = [];
+
+                    // 2. 显示弹窗
+                    showCallModal.value = true;
+                    updateCallStatus('正在呼叫甲方...', 'ringing');
+
+                    // 3. 获取本地媒体
+                    callLocalStream = await navigator.mediaDevices.getUserMedia({
+                        audio: { echoCancellation: true, noiseSuppression: true },
+                        video: { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 15 } }
+                    });
+                    const lv = document.getElementById('lpLocalVideo');
+                    if (lv) lv.srcObject = callLocalStream;
+
+                    // 4. 连接 WebSocket
+                    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+                    const wsUrl = `${protocol}://${window.location.host}/ws/video_call/${currentCallId}/lp`;
+                    callWebSocket = new WebSocket(wsUrl);
+
+                    callWebSocket.onopen = () => {
+                        setupCallPeerConnection();
+                        startCallStats();
+                        // LP 连接后发送 ready，同时轮询检查 GP 是否已接听
+                        callWebSocket.send(JSON.stringify({ type: 'ready' }));
+
+                        // 轮询检查 GP 接听状态
+                        const statusPoller = setInterval(async () => {
+                            if (!currentCallId || !showCallModal.value) { clearInterval(statusPoller); return; }
+                            try {
+                                const sr = await fetch(`${API_BASE}/call_status/${currentCallId}`);
+                                const sd = await sr.json();
+                                if (sd.status === 'ACCEPTED' && callPeerConnection && !callHasSentOffer) {
+                                    // GP 已接受但还没发 offer → LP 主动发 offer
+                                    clearInterval(statusPoller);
+                                    const offer = await callPeerConnection.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+                                    await callPeerConnection.setLocalDescription(offer);
+                                    callHasSentOffer = true;
+                                    callWebSocket.send(JSON.stringify({ type: 'offer', data: offer }));
+                                    updateCallStatus('对方已接听，建立连接中...');
+                                } else if (sd.status === 'TIMEOUT' || sd.status === 'REJECTED') {
+                                    clearInterval(statusPoller);
+                                    updateCallStatus(sd.status === 'REJECTED' ? '对方拒绝了通话' : '对方未接听，已超时', 'error');
+                                    setTimeout(hangupCall, 2500);
+                                }
+                            } catch(e) {}
+                        }, 1000);
+                    };
+
+                    callWebSocket.onmessage = (event) => {
+                        try { handleCallSignal(JSON.parse(event.data)); } catch(e) {}
+                    };
+
+                    callWebSocket.onerror = () => { updateCallStatus('信令连接失败', 'error'); };
+                    callWebSocket.onclose = () => { if (showCallModal.value) updateCallStatus('连接已断开', 'error'); };
+
+                    // 绑定控件事件
+                    setTimeout(() => {
+                        const micBtn = document.getElementById('lpMicBtn'), camBtn = document.getElementById('lpCameraBtn');
+                        if (micBtn) micBtn.onclick = () => {
+                            callMicEnabled = !callMicEnabled;
+                            callLocalStream?.getAudioTracks().forEach(t => t.enabled = callMicEnabled);
+                            micBtn.classList.toggle('bg-red-500', !callMicEnabled);
+                            micBtn.textContent = callMicEnabled ? '🎤' : '🔇';
+                        };
+                        if (camBtn) camBtn.onclick = () => {
+                            callCameraEnabled = !callCameraEnabled;
+                            callLocalStream?.getVideoTracks().forEach(t => t.enabled = callCameraEnabled);
+                            camBtn.classList.toggle('bg-red-500', !callCameraEnabled);
+                            camBtn.textContent = callCameraEnabled ? '📹' : '📹✕';
+                        };
+                    }, 500);
+
                 } catch (error) {
-                    console.error('发起通话失败:', error);
-                    alert('发起通话出错，请稍后重试');
+                    console.error('通话初始化失败:', error);
+                    alert('无法启动通话：' + (error.message || '请检查摄像头/麦克风权限'));
+                    hangupCall();
                 }
             };
 
@@ -608,6 +829,7 @@
             return { 
                 navData, allocations, allocationMeta, limitStatus, quarterlyInfo, notices,
                 isAuthenticated, showAuthModal, pinInput, verifyPin, closeAuthModal, logout, initiateCall,
+                showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall,
                 form, alphaForm, fileInput, msgInput, msgFileInput, selectedMessageFile, messages, myRequests,
                 submitWithdrawal, submitAlpha, claimQuarterly, submitMessage, handleMessageFileSelect, isImageFile, isVideoFile, openMediaModal,
                 isUploading, isSubmitting,

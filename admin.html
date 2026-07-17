@@ -32,6 +32,30 @@
         </div>
     </div>
 
+    <!-- 🎥 GP 全屏通话弹窗 -->
+    <div v-if="showCallModal" class="fixed inset-0 bg-[#0a0e27] z-[90] flex flex-col">
+        <div class="text-center py-3 px-4" :class="callStatusClass" id="gpCallStatusBar">
+            <span id="gpCallStatusIcon">{{ callStatusIcon }}</span>
+            <span class="ml-2 text-sm" id="gpCallStatusText">{{ callStatusText }}</span>
+        </div>
+        <div class="flex-1 relative bg-black mx-4 rounded-xl overflow-hidden" style="min-height:0">
+            <video id="gpRemoteVideo" class="absolute inset-0 w-full h-full object-cover" playsinline autoplay></video>
+            <div class="absolute top-3 left-3 bg-black/60 px-3 py-1 rounded text-xs text-white z-10">乙方</div>
+            <video id="gpLocalVideo" class="absolute bottom-3 right-3 w-1/4 aspect-video border-2 border-emerald-400 rounded-lg bg-black object-cover z-10" playsinline autoplay muted></video>
+        </div>
+        <div class="flex justify-center items-center gap-5 py-5">
+            <button id="gpMicBtn" class="w-14 h-14 rounded-full bg-emerald-500 text-white text-2xl flex items-center justify-center hover:scale-110 transition shadow-lg">🎤</button>
+            <button id="gpCameraBtn" class="w-14 h-14 rounded-full bg-blue-500 text-white text-2xl flex items-center justify-center hover:scale-110 transition shadow-lg">📹</button>
+            <button @click="hangupCall" class="bg-red-600 hover:bg-red-500 text-white font-bold px-6 py-3 rounded-lg text-sm transition shadow-lg flex items-center gap-2">✕ 挂断</button>
+        </div>
+        <div class="grid grid-cols-4 gap-3 px-4 pb-4 text-sm max-w-2xl mx-auto w-full">
+            <div class="bg-gray-900 p-3 rounded border border-gray-700 text-center"><div class="text-gray-400 text-xs">延迟</div><div class="font-mono text-emerald-400 text-sm" id="gpLatency">-- ms</div></div>
+            <div class="bg-gray-900 p-3 rounded border border-gray-700 text-center"><div class="text-gray-400 text-xs">分辨率</div><div class="font-mono text-emerald-400 text-sm" id="gpResolution">-- x --</div></div>
+            <div class="bg-gray-900 p-3 rounded border border-gray-700 text-center"><div class="text-gray-400 text-xs">帧率</div><div class="font-mono text-emerald-400 text-sm" id="gpFrameRate">-- fps</div></div>
+            <div class="bg-gray-900 p-3 rounded border border-gray-700 text-center"><div class="text-gray-400 text-xs">连接</div><div class="font-mono text-emerald-400 text-sm" id="gpConnState">等待中</div></div>
+        </div>
+    </div>
+
     <header class="border-b border-yellow-700/50 pb-4 flex justify-between items-end">
         <div>
             <h1 class="text-3xl font-bold text-yellow-500 tracking-wider">GP 全权控制台</h1>
@@ -48,6 +72,21 @@
             <span class="text-xs text-emerald-500 font-mono">实时同步中...</span>
         </div>
     </header>
+
+    <!-- 📞 来电通知条 -->
+    <div v-if="incomingCall" class="bg-blue-900/40 border-2 border-blue-500 text-blue-200 px-5 py-4 rounded-lg shadow-[0_0_20px_rgba(59,130,246,0.3)] animate-pulse flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+            <span class="text-3xl">📞</span>
+            <div>
+                <div class="font-bold text-base">乙方正在呼叫你...</div>
+                <div class="text-xs text-blue-400 mt-0.5">{{ incomingCall.seconds_left }} 秒后过期</div>
+            </div>
+        </div>
+        <div class="flex gap-3">
+            <button @click="acceptIncomingCall" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-5 py-2 rounded-lg transition shadow-lg">接听</button>
+            <button @click="declineIncomingCall" class="border border-red-500 text-red-400 hover:bg-red-900/40 px-5 py-2 rounded-lg transition">拒绝</button>
+        </div>
+    </div>
 
     <div v-if="showNetWarning" class="bg-red-900/40 border border-red-600 text-red-200 text-sm px-4 py-3 rounded flex items-center justify-between gap-3">
         <span>网络波动，正在自动恢复（连续失败 {{ consecutiveFailures }} 次）。</span>
@@ -260,7 +299,173 @@
             const pinInput = ref('');
             const authError = ref('');
             const authLoading = ref(false);
-            let gpToken = null;  // 会话令牌，所有 GP API 调用都需要携带
+            let gpToken = null;
+
+            // ───── 视频通话状态 ─────
+            const incomingCall = ref(null);
+            const showCallModal = ref(false);
+            const callStatusText = ref('');
+            const callStatusIcon = ref('📞');
+            const callStatusClass = ref('status-bar');
+            let gpPeerConn = null;
+            let gpLocalStream = null;
+            let gpCallSocket = null;
+            let gpMicOn = true;
+            let gpCamOn = true;
+            let gpStatsTimer = null;
+            let gpPendingCandidates = [];
+            let gpRemoteDescSet = false;
+            let gpCurrentCallId = null;
+            let gpIncomingPollTimer = null;
+
+            const gpCallStyle = document.createElement('style');
+            gpCallStyle.textContent = `
+                #gpCallStatusBar.status-bar { background: rgba(16,185,129,0.1); border: 1px solid #10b981; border-radius: 8px; color: #f8fafc; }
+                #gpCallStatusBar.status-bar.error { background: rgba(239,68,68,0.1); border-color: #ef4444; color: #ef4444; }
+                #gpCallStatusBar.status-bar.ringing { background: rgba(59,130,246,0.15); border-color: #3b82f6; color: #93c5fd; }
+            `;
+            document.head.appendChild(gpCallStyle);
+
+            const updateGpCallStatus = (msg, type = 'normal') => {
+                callStatusText.value = msg;
+                callStatusIcon.value = type === 'ringing' ? '📞' : type === 'error' ? '⚠️' : '🔗';
+                callStatusClass.value = 'status-bar' + (type === 'error' ? ' error' : type === 'ringing' ? ' ringing' : '');
+            };
+
+            const hangupCall = () => {
+                gpLocalStream?.getTracks().forEach(t => t.stop());
+                gpPeerConn?.close();
+                gpCallSocket?.close();
+                if (gpStatsTimer) clearInterval(gpStatsTimer);
+                if (gpIncomingPollTimer) clearInterval(gpIncomingPollTimer);
+                showCallModal.value = false;
+                incomingCall.value = null;
+                gpCurrentCallId = null;
+                gpRemoteDescSet = false;
+                gpPendingCandidates = [];
+            };
+
+            const startGpCallStats = () => {
+                gpStatsTimer = setInterval(async () => {
+                    if (!gpPeerConn) return;
+                    try {
+                        const stats = await gpPeerConn.getStats();
+                        let latency = '--', resolution = '-- x --', frameRate = '--';
+                        stats.forEach(r => {
+                            if (r.type === 'inbound-rtp' && r.mediaType === 'video') {
+                                latency = r.roundTripTime ? Math.round(r.roundTripTime * 1000) + ' ms' : '-- ms';
+                                resolution = `${r.frameWidth || '--'} x ${r.frameHeight || '--'}`;
+                                frameRate = r.framesPerSecond ? Math.round(r.framesPerSecond) + ' fps' : '-- fps';
+                            }
+                        });
+                        const el = document.getElementById('gpConnState'); if (el) el.textContent = gpPeerConn.connectionState || '--';
+                        const elL = document.getElementById('gpLatency'); if (elL) elL.textContent = latency;
+                        const elR = document.getElementById('gpResolution'); if (elR) elR.textContent = resolution;
+                        const elF = document.getElementById('gpFrameRate'); if (elF) elF.textContent = frameRate;
+                    } catch(e) {}
+                }, 1500);
+            };
+
+            const setupGpPeerConnection = () => {
+                gpPeerConn = new RTCPeerConnection({
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' },
+                        { urls: ['turn:numb.viagenie.ca:3478'], username: 'webrtc@live.com', credential: 'webrtc' },
+                        { urls: ['turn:turn.anyfirewall.com:443?transport=tcp'], username: 'webrtc', credential: 'webrtc' }
+                    ]
+                });
+                gpLocalStream.getTracks().forEach(t => gpPeerConn.addTrack(t, gpLocalStream));
+
+                gpPeerConn.ontrack = (event) => {
+                    const rv = document.getElementById('gpRemoteVideo');
+                    if (rv && event.streams[0]) { rv.srcObject = event.streams[0]; rv.play?.().catch(() => {}); }
+                    updateGpCallStatus('通话中...');
+                };
+
+                gpPeerConn.onicecandidate = (event) => {
+                    if (event.candidate && gpCallSocket?.readyState === WebSocket.OPEN)
+                        gpCallSocket.send(JSON.stringify({ type: 'ice-candidate', data: event.candidate }));
+                };
+
+                gpPeerConn.onconnectionstatechange = () => {
+                    const el = document.getElementById('gpConnState'); if (el) el.textContent = gpPeerConn.connectionState || '--';
+                    if (gpPeerConn.connectionState === 'failed') updateGpCallStatus('连接失败', 'error');
+                };
+            };
+
+            const handleGpSignal = async (msg) => {
+                try {
+                    if (msg.type === 'peer-disconnected') { updateGpCallStatus('对方已挂断', 'error'); setTimeout(hangupCall, 2000); return; }
+                    if (msg.type === 'offer' && gpPeerConn) {
+                        await gpPeerConn.setRemoteDescription(new RTCSessionDescription(msg.data));
+                        gpRemoteDescSet = true;
+                        for (const c of gpPendingCandidates) { try { await gpPeerConn.addIceCandidate(new RTCIceCandidate(c)); } catch(e) {} }
+                        gpPendingCandidates = [];
+                        const answer = await gpPeerConn.createAnswer();
+                        await gpPeerConn.setLocalDescription(answer);
+                        gpCallSocket.send(JSON.stringify({ type: 'answer', data: answer }));
+                        return;
+                    }
+                    if (msg.type === 'answer' && gpPeerConn) {
+                        await gpPeerConn.setRemoteDescription(new RTCSessionDescription(msg.data));
+                        gpRemoteDescSet = true;
+                        for (const c of gpPendingCandidates) { try { await gpPeerConn.addIceCandidate(new RTCIceCandidate(c)); } catch(e) {} }
+                        gpPendingCandidates = [];
+                        return;
+                    }
+                    if (msg.type === 'ice-candidate' && gpPeerConn) {
+                        if (gpRemoteDescSet) { try { await gpPeerConn.addIceCandidate(new RTCIceCandidate(msg.data)); } catch(e) {} }
+                        else { gpPendingCandidates.push(msg.data); }
+                    }
+                } catch(e) { console.warn('GP信令:', e); }
+            };
+
+            const acceptIncomingCall = async () => {
+                if (!incomingCall.value) return;
+                const cid = incomingCall.value.call_id;
+                try {
+                    const res = await fetch(`${API_BASE}/gp/accept_call/${cid}`, { method: 'POST' });
+                    const d = await res.json();
+                    if (d.status !== 'success') { alert(d.message || '接听失败'); return; }
+
+                    gpCurrentCallId = cid;
+                    incomingCall.value = null;
+                    showCallModal.value = true;
+                    updateGpCallStatus('正在建立连接...');
+
+                    gpLocalStream = await navigator.mediaDevices.getUserMedia({
+                        audio: { echoCancellation: true, noiseSuppression: true },
+                        video: { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 15 } }
+                    });
+                    const lv = document.getElementById('gpLocalVideo'); if (lv) lv.srcObject = gpLocalStream;
+
+                    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+                    gpCallSocket = new WebSocket(`${protocol}://${window.location.host}/ws/video_call/${cid}/gp`);
+                    gpCallSocket.onopen = () => {
+                        setupGpPeerConnection();
+                        startGpCallStats();
+                        gpCallSocket.send(JSON.stringify({ type: 'joined' }));
+                    };
+                    gpCallSocket.onmessage = (e) => { try { handleGpSignal(JSON.parse(e.data)); } catch(_) {} };
+                    gpCallSocket.onerror = () => updateGpCallStatus('信令连接失败', 'error');
+                    gpCallSocket.onclose = () => { if (showCallModal.value) updateGpCallStatus('连接已断开', 'error'); };
+
+                    setTimeout(() => {
+                        const mb = document.getElementById('gpMicBtn'), cb = document.getElementById('gpCameraBtn');
+                        if (mb) mb.onclick = () => { gpMicOn = !gpMicOn; gpLocalStream?.getAudioTracks().forEach(t => t.enabled = gpMicOn); mb.classList.toggle('bg-red-500', !gpMicOn); mb.textContent = gpMicOn ? '🎤' : '🔇'; };
+                        if (cb) cb.onclick = () => { gpCamOn = !gpCamOn; gpLocalStream?.getVideoTracks().forEach(t => t.enabled = gpCamOn); cb.classList.toggle('bg-red-500', !gpCamOn); cb.textContent = gpCamOn ? '📹' : '📹✕'; };
+                    }, 500);
+
+                } catch(e) { alert('接听失败: ' + (e.message || '未知错误')); hangupCall(); }
+            };
+
+            const declineIncomingCall = async () => {
+                if (incomingCall.value) {
+                    try { await fetch(`${API_BASE}/gp/decline_call/${incomingCall.value.call_id}`, { method: 'POST' }); } catch(_) {}
+                }
+                incomingCall.value = null;
+            };
 
             // 给所有 GP API 请求自动附加鉴权头
             const gpFetch = async (url, options = {}) => {
@@ -446,6 +651,14 @@
                     notices.value = await fetchJsonWithRetry(`${API_BASE}/lp/notices?t=${t}`); 
                     const sf = onlyFailedLogs.value ? 'FAILED' : 'ALL';
                     notificationLogs.value = await fetchJsonWithRetry(`${API_BASE}/gp/notification_logs?limit=30&status_filter=${sf}&t=${t}`, { headers: { 'X-GP-Token': gpToken } });
+
+                    // 6. 检测来电（已有活跃通话或通知时不重复查询）
+                    if (!showCallModal.value && !incomingCall.value) {
+                        try {
+                            const callRes = await fetchJsonWithTimeout(`${API_BASE}/gp/incoming_call?t=${t}`, { headers: { 'X-GP-Token': gpToken } });
+                            if (callRes.has_call) incomingCall.value = { call_id: callRes.call_id, seconds_left: callRes.seconds_left, status: callRes.status };
+                        } catch(_) {}
+                    }
                 } catch(e) {
                     ok = false;
                     if (e.status === 403) { logout(); return false; }
@@ -574,18 +787,6 @@
                 alert((await res.json()).message); fetchData();
             };
 
-            const initiateCall = () => {
-                const callId = `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                const callUrl = `/video_call?call_id=${callId}&user_type=gp`;
-                
-                // 弹出提示，告诉用户分享链接给乙方
-                const lpLink = window.location.origin + callUrl.replace('user_type=gp', 'user_type=lp');
-                alert(`通话链接已生成！请通过以下方式通知乙方接听：\n\n${lpLink}\n\n或者告诉乙方使用以下链接：/video_call?call_id=${callId}&user_type=lp`);
-                
-                // 打开本地通话页面
-                window.open(callUrl, '_blank', 'width=1280,height=720');
-            };
-
             const replyMsg = async (msg) => {
                 if (!msg.draftReply) return;
                 const fd = new FormData(); fd.append('reply', msg.draftReply);
@@ -626,7 +827,7 @@
                 document.removeEventListener('visibilitychange', restartPolling);
                 if (recoveredBannerTimer) clearTimeout(recoveredBannerTimer);
             });
-            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, notificationLogs, onlyFailedLogs, retryingLogId, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, retryNotification, replyMsg, isImageFileAdmin, isVideoFileAdmin, openMediaModalAdmin, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown, isAuthenticated, pinInput, authError, authLoading, verifyPin, logout }
+            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, notificationLogs, onlyFailedLogs, retryingLogId, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, retryNotification, replyMsg, isImageFileAdmin, isVideoFileAdmin, openMediaModalAdmin, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown, isAuthenticated, pinInput, authError, authLoading, verifyPin, logout, incomingCall, showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall, acceptIncomingCall, declineIncomingCall }
         }
     }).mount('#admin-app')
 </script>
