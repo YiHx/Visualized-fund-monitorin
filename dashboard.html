@@ -9,6 +9,8 @@
     <style>.neon-text { text-shadow: 0 0 10px rgba(52, 211, 153, 0.5); } body { background-color: #0f172a; color: #f8fafc; }</style>
 </head>
 <body class="p-4 md:p-8 font-mono relative">
+<!-- 光标拖尾容器 -->
+<div id="sparkle-container" style="position:fixed;inset:0;pointer-events:none;z-index:9999;"></div>
 
 <div id="app" class="max-w-4xl mx-auto space-y-6 relative">
     
@@ -108,7 +110,7 @@
     <div class="bg-gray-800 p-8 rounded-lg border border-gray-700 shadow-lg text-center relative overflow-hidden transition-all">
         <div class="absolute top-0 left-1/2 transform -translate-x-1/2 w-full h-1 bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.8)]"></div>
         <h2 class="text-gray-400 text-sm mb-4">底层资产理论应得总值 (R_total)</h2>
-        <div class="text-5xl md:text-6xl font-bold text-emerald-400 neon-text tracking-wider transition-all duration-500">¥ {{ navData.R_total || '0.00' }}</div>
+        <div class="text-5xl md:text-6xl font-bold text-emerald-400 neon-text tracking-wider transition-all duration-500 cursor-pointer select-none" @click="clickNav" title="点我有惊喜">{{ navDisplay || '0.00' }}</div>
         
         <div class="mt-8 flex flex-wrap justify-center gap-6 text-sm border-t border-gray-700 pt-4 max-w-lg mx-auto">
             <span class="text-gray-400">有效本金: <span class="text-white font-mono">¥{{ navData.effective_principal }}</span></span>
@@ -384,6 +386,7 @@
 </div>
 
 <style>.animate-pulse-slow { animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite; } @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .8; } } .animate-fade-in-down { animation: fadeInDown 0.4s ease-out; } @keyframes fadeInDown { from { opacity: 0; transform: translateY(-15px); } to { opacity: 1; transform: translateY(0); } } .animate-fade-in { animation: fadeIn 0.5s ease-out; } @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+/* 🎰 老虎机 */
 .slot-reel { perspective: 200px; }
 .slot-strip { top: 0; }
 .slot-strip.spinning { animation: slotSpin linear infinite; }
@@ -395,14 +398,142 @@
 .confetti-container { z-index: 200; }
 .confetti-particle { top: -20px; animation: confettiFall linear forwards; }
 @keyframes confettiFall { 0% { top: -20px; opacity: 1; transform: rotate(0deg) scale(1); } 80% { opacity: 1; } 100% { top: 110%; opacity: 0; transform: rotate(720deg) scale(0.3); } }
+/* ✨ 光标拖尾 */
+.sparkle-dot { position: fixed; pointer-events: none; z-index: 9999; border-radius: 50%; animation: sparkleFade 0.8s ease-out forwards; }
+@keyframes sparkleFade { 0% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(0); } }
+/* 💰 NAV 里程碑 */
+.nav-milestone { animation: milestonePop 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55); }
+@keyframes milestonePop { 0% { transform: scale(1); } 50% { transform: scale(1.08); filter: brightness(1.5); } 100% { transform: scale(1); filter: brightness(1); } }
+/* 🎉 撒花 */
+.party-particle { position: fixed; pointer-events: none; z-index: 10000; animation: partyFall linear forwards; }
+@keyframes partyFall { 0% { top: -5%; opacity: 1; transform: rotate(0deg) translateX(0); } 100% { top: 105%; opacity: 0; transform: rotate(1080deg) translateX(var(--drift)); } }
+/* 📜 打字机 */
+.typewriter { overflow: hidden; white-space: nowrap; animation: typing 0.05s steps(1) forwards; }
+/* 🪙 NAV 数字弹跳 */
+.nav-bounce { animation: navBounce 0.5s ease-out; }
+@keyframes navBounce { 0% { transform: translateY(-8px); } 100% { transform: translateY(0); } }
 </style>
 
 <script>
+    // ══════════════════════════════════════════
+    // 🔉 趣味音效引擎（Web Audio 合成，无需音频文件）
+    // ══════════════════════════════════════════
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    let _audioCtx = null;
+    const getAudio = () => { if (!_audioCtx) _audioCtx = new AudioCtx(); return _audioCtx; };
+    const playTone = (freq, duration, type = 'sine', vol = 0.08) => {
+        try { const a = getAudio(); const o = a.createOscillator(); const g = a.createGain();
+            o.type = type; o.frequency.value = freq; g.gain.value = vol;
+            g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + duration);
+            o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime + duration);
+        } catch(e) {} };
+    const sfx = {
+        coin: () => { playTone(800, 0.1, 'square', 0.06); setTimeout(() => playTone(1200, 0.12, 'square', 0.07), 80); },
+        jackpot: () => { [523,659,784,1047].forEach((f,i) => setTimeout(() => playTone(f, 0.3, 'triangle', 0.1), i*120)); },
+        slotTick: () => playTone(200+Math.random()*300, 0.05, 'square', 0.03),
+        login: () => { [523,659,784].forEach((f,i) => setTimeout(() => playTone(f, 0.15, 'sine', 0.06), i*100)); },
+        milestone: () => { [784,988,1175,1568].forEach((f,i) => setTimeout(() => playTone(f, 0.4, 'triangle', 0.08), i*150)); },
+        lose: () => { playTone(200, 0.3, 'sawtooth', 0.04); setTimeout(() => playTone(150, 0.4, 'sawtooth', 0.03), 200); },
+    };
+
+    // ══════════════════════════════════════════
+    // 🎉 撒花系统
+    // ══════════════════════════════════════════
+    const spawnConfetti = (count = 40) => {
+        const emojis = ['🎉','✨','💫','🌟','🎊','💎','💰','⭐','🎯','🪙','💵','🔥'];
+        for (let i = 0; i < count; i++) {
+            const p = document.createElement('div');
+            p.className = 'party-particle';
+            p.textContent = emojis[i % emojis.length];
+            p.style.cssText = `left:${Math.random()*100}%;--drift:${(Math.random()-0.5)*200}px;animation-duration:${2+Math.random()*3}s;animation-delay:${Math.random()*0.6}s;font-size:${12+Math.random()*20}px;`;
+            document.body.appendChild(p);
+            setTimeout(() => p.remove(), 4000);
+        }
+    };
+
+    // ══════════════════════════════════════════
+    // ✨ 光标金粉拖尾
+    // ══════════════════════════════════════════
+    let sparkleThrottle = 0;
+    document.addEventListener('mousemove', (e) => {
+        if (Date.now() - sparkleThrottle < 40) return;
+        sparkleThrottle = Date.now();
+        const dot = document.createElement('div');
+        dot.className = 'sparkle-dot';
+        const size = 3 + Math.random() * 5;
+        const colors = ['#fbbf24','#f59e0b','#fcd34d','#fde68a','#fef3c7'];
+        dot.style.cssText = `left:${e.clientX}px;top:${e.clientY}px;width:${size}px;height:${size}px;background:${colors[Math.floor(Math.random()*colors.length)]};box-shadow:0 0 ${size*2}px ${colors[0]};`;
+        document.getElementById('sparkle-container').appendChild(dot);
+        setTimeout(() => dot.remove(), 800);
+    });
+
+    // ══════════════════════════════════════════
+    // 🎯 NAV 里程碑检测 + 连击彩蛋
+    // ══════════════════════════════════════════
+    let navClickCount = 0, navClickTimer = null;
+    let lastMilestone = null;
+    const checkNavMilestone = (navValue) => {
+        const milestones = [500, 1000, 1500, 2000, 3000, 5000, 8888, 10000];
+        for (const m of milestones) {
+            if (navValue >= m && lastMilestone !== m && (!lastMilestone || m > lastMilestone)) {
+                lastMilestone = m;
+                setTimeout(() => { spawnConfetti(60); sfx.milestone(); }, 300);
+                return;
+            }
+        }
+    };
+
+    // ══════════════════════════════════════════
+    // 🎲 随机趣味状态文案
+    // ══════════════════════════════════════════
+    const funnyStatuses = [
+        "正在从瑞士银行同步数据...", "GP正在数钱中...", "区块链验证通过 ✅",
+        "正在破译甲方密码...", "数据已加密传输 🔐", "正在和华尔街连线...",
+        "GP的私人飞机已降落", "正在计算复利...这可能需要一会儿",
+        "系统检测到资金异动...哦，是正常的", "正在安抚市场情绪..."
+    ];
+    let funnyStatusIdx = 0;
+    const getFunnyStatus = () => { funnyStatusIdx = (funnyStatusIdx + 1) % funnyStatuses.length; return funnyStatuses[funnyStatusIdx]; };
+
     const { createApp, ref, onMounted, onUnmounted } = Vue
     createApp({
         setup() {
             const API_BASE = '/api/v1';
             const navData = ref({});
+            const navDisplay = ref('0.00');  // 动画化 NAV 显示值
+            let navAnimFrame = null;
+
+            // 🎯 NAV 数字滚动动画（tweening）
+            const animateNav = (targetVal) => {
+                if (navAnimFrame) cancelAnimationFrame(navAnimFrame);
+                const current = parseFloat(String(navDisplay.value).replace(/[^0-9.]/g, '')) || 0;
+                const target = parseFloat(targetVal) || 0;
+                if (Math.abs(target - current) < 0.01) { navDisplay.value = target.toFixed(2); checkNavMilestone(target); return; }
+                const start = performance.now();
+                const duration = 600;
+                const ease = t => t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
+                const step = (now) => {
+                    const elapsed = now - start;
+                    const progress = Math.min(elapsed / duration, 1);
+                    const val = current + (target - current) * ease(progress);
+                    navDisplay.value = val.toFixed(2);
+                    if (progress < 1) { navAnimFrame = requestAnimationFrame(step); }
+                    else { navDisplay.value = target.toFixed(2); checkNavMilestone(target); }
+                };
+                navAnimFrame = requestAnimationFrame(step);
+            };
+
+            // 🐣 彩蛋：连击 NAV 5 次
+            const clickNav = () => {
+                navClickCount++;
+                if (navClickTimer) clearTimeout(navClickTimer);
+                navClickTimer = setTimeout(() => { navClickCount = 0; }, 1500);
+                if (navClickCount >= 5) {
+                    navClickCount = 0;
+                    spawnConfetti(80);
+                    sfx.jackpot();
+                }
+            };
             const limitStatus = ref({});
             const allocations = ref([]);
             const allocationMeta = ref({});
@@ -451,6 +582,7 @@
                 // 启动老虎机动画（CSS驱动，3个 reel 各自旋转）
                 const reels = document.querySelectorAll('.slot-strip');
                 reels.forEach(r => { r.classList.add('spinning'); r.classList.remove('stopped'); });
+                let slotTickInterval = setInterval(() => sfx.slotTick(), 120);
 
                 try {
                     // 并行请求 + 至少 2.5 秒动画
@@ -472,10 +604,14 @@
 
                     lottery.value.drawing = false;
 
+                    clearInterval(slotTickInterval);
                     if (d.status === 'success') {
                         lottery.value.result = true;
                         lottery.value.resultType = d.result_type;
                         lottery.value.resultName = d.prize_name;
+                        if (d.result_type === 'JACKPOT') { setTimeout(() => sfx.jackpot(), 200); }
+                        else if (d.result_type === 'WIN') { sfx.coin(); }
+                        else { sfx.lose(); }
                         lottery.value.resultIcon = d.prize_icon;
                         lottery.value.resultValue = d.prize_value;
                         lottery.value.resultMessage = d.message;
@@ -490,6 +626,7 @@
                         alert(d.detail || '抽奖失败');
                     }
                 } catch(e) {
+                    clearInterval(slotTickInterval);
                     lottery.value.drawing = false;
                     lottery.value.result = null;
                     reels.forEach(r => { if (r) { r.classList.remove('spinning'); r.classList.add('stopped'); } });
@@ -599,6 +736,7 @@
                 try {
                     const dashData = await fetchJsonWithRetry(`${API_BASE}/dashboard?t=${t}`);
                     navData.value = dashData.nav;
+                    animateNav(dashData.nav.R_total);
                     allocations.value = dashData.allocations;
                     allocationMeta.value = dashData.allocation_meta || {};
                     quarterlyInfo.value = dashData.quarterly_info;
@@ -670,12 +808,13 @@
                 try {
                     const res = await fetch(`${API_BASE}/lp/verify`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({pin: pinInput.value})});
                     if (res.ok) { 
-                        isAuthenticated.value = true; 
-                        localStorage.setItem('lp_auth', 'true'); 
-                        showAuthModal.value = false; 
-                        pinInput.value = ''; 
-                        hasSeenNoticesThisSession.value = false; // 每次重新登录都重置弹窗状态
-                        fetchPrivateData(); 
+                        isAuthenticated.value = true;
+                        localStorage.setItem('lp_auth', 'true');
+                        showAuthModal.value = false;
+                        pinInput.value = '';
+                        hasSeenNoticesThisSession.value = false;
+                        spawnConfetti(25); sfx.login();
+                        fetchPrivateData();
                     }
                     else alert("授权密码错误！请检查后重试。");
                 } catch(e) { alert("网络连接失败，请确认后台服务器已启动！"); }
@@ -1054,7 +1193,7 @@
             
             return { 
                 navData, allocations, allocationMeta, limitStatus, quarterlyInfo, notices,
-                isAuthenticated, showAuthModal, pinInput, verifyPin, closeAuthModal, logout, initiateCall,
+                navDisplay, clickNav, isAuthenticated, showAuthModal, pinInput, verifyPin, closeAuthModal, logout, initiateCall,
                 showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall,
                 lottery, doLotteryDraw,
                 form, alphaForm, fileInput, msgInput, msgFileInput, selectedMessageFile, messages, myRequests,

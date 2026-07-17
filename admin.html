@@ -59,7 +59,9 @@
     <header class="border-b border-yellow-700/50 pb-4 flex justify-between items-end">
         <div>
             <h1 class="text-3xl font-bold text-yellow-500 tracking-wider">GP 全权控制台</h1>
-            <p class="text-sm text-gray-500 mt-2">已开启全局心跳监听：自动同步前台动态，实时指挥</p>
+            <p class="text-sm mt-1" :class="quoteGlow ? 'text-yellow-300' : 'text-gray-500'" @click="nextQuote" title="点击换一句" style="cursor:pointer">
+                💬 "{{ currentQuote }}" — GP
+            </p>
         </div>
         <div class="flex items-center space-x-3">
             <button v-if="isAuthenticated" @click="logout" class="text-xs text-gray-500 hover:text-red-400 border border-gray-700 hover:border-red-800 px-2 py-1 rounded transition">
@@ -714,6 +716,29 @@
                 if (res.status === 403) { logout(); return; }
                 if (res.ok) { alert('记录已清空'); fetchLottoStats(); }
             };
+            // 🎙️ GP 暴君语录
+            const gpQuotes = [
+                "乙方的一切行为都必须在甲方的监控之下。", "风险可控，利润可期。",
+                "资金安全是第一生产力。", "我不同意你的申请，但你可以再申请一次。",
+                "今天又拒绝了乙方的提款请求，心情愉悦 😎", "本台永不亏损，亏损即是幻觉。",
+                "上帝模式是留给明白人用的。", "后台管理是一门艺术，而我是这门艺术的米开朗基罗。",
+                "在我这里，没有「驳回」，只有「战略性延迟批准」。", "一切解释权归本台所有。",
+                "乙方快乐 = NAV上涨，NAV上涨 = 我更快乐。", "信任是好的，控制是更好的。",
+                "如果你的申请被驳回了，那一定是你还不够努力。", "记住：甲方永远是对的。",
+                "GP二字，重于泰山。", "今天也要做一名合格的家庭CFO。"
+            ];
+            let quoteIdx = Math.floor(Math.random() * gpQuotes.length);
+            const quoteGlow = ref(false);
+            const currentQuote = ref(gpQuotes[quoteIdx]);
+            const nextQuote = () => {
+                quoteIdx = (quoteIdx + 1) % gpQuotes.length;
+                currentQuote.value = gpQuotes[quoteIdx];
+                quoteGlow.value = true;
+                setTimeout(() => { quoteGlow.value = false; }, 800);
+            };
+            // 每 30 秒自动换一句
+            setInterval(() => { if (isAuthenticated.value) nextQuote(); }, 30000);
+
             const POLL_VISIBLE_MS = 4000;
             const POLL_HIDDEN_MS = 15000;
             const FETCH_TIMEOUT_MS = 8000;
@@ -1014,7 +1039,7 @@
                 document.removeEventListener('visibilitychange', restartPolling);
                 if (recoveredBannerTimer) clearTimeout(recoveredBannerTimer);
             });
-            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, notificationLogs, onlyFailedLogs, retryingLogId, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, retryNotification, replyMsg, isImageFileAdmin, isVideoFileAdmin, openMediaModalAdmin, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown, isAuthenticated, pinInput, authError, authLoading, verifyPin, logout, incomingCall, showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall, acceptIncomingCall, declineIncomingCall, lottoConfig, lottoStats, lottoForm, lottoProb, fetchLottoConfig, fetchLottoStats, lotteryUpdateCost, lotteryToggleEnabled, lotteryTogglePrize, lotteryDeletePrize, lotteryAddPrize, lotteryResetRecords }
+            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, notificationLogs, onlyFailedLogs, retryingLogId, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, retryNotification, replyMsg, isImageFileAdmin, isVideoFileAdmin, openMediaModalAdmin, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown, isAuthenticated, pinInput, authError, authLoading, verifyPin, logout, incomingCall, showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall, acceptIncomingCall, declineIncomingCall, currentQuote, quoteGlow, nextQuote, lottoConfig, lottoStats, lottoForm, lottoProb, fetchLottoConfig, fetchLottoStats, lotteryUpdateCost, lotteryToggleEnabled, lotteryTogglePrize, lotteryDeletePrize, lotteryAddPrize, lotteryResetRecords }
         }
     }).mount('#admin-app')
 </script>
