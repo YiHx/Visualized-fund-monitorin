@@ -460,6 +460,20 @@
         'font-size:12px;color:#94a3b8;');
     console.log('%c💡 弟弟是来花钱的，你是来管钱的。分工明确。', 'color:#fbbf24;font-style:italic;');
     console.log('%c🛡️ 记住：上帝模式不是bug，是特性。', 'color:#94a3b8;');
+    console.log('%c🎀 凛ちゃんも見てるよ | 远坂凛正在注视这个控制台', 'color:#f472b6;');
+
+    // 📑 后台标签页标题动画
+    let adminTabIdx = 0;
+    const adminTitles = ['👑 GP 全权控制台', '🛡️ 甲方后台 | 权力中心', '💎 凛 Protection Active', '🏛️ 基金管理人控制台', '⚡ 令呪発動中...'];
+    setInterval(() => { if (!document.hidden) document.title = adminTitles[adminTabIdx++ % adminTitles.length]; }, 5000);
+
+    // 🔢 GP 治理天数计数器
+    (()=>{
+        const start = new Date('2024-01-01');
+        const days = Math.floor((Date.now() - start) / 86400000);
+        console.log(`%c👑 GP 已治理 ${days} 天 %c| 弟弟已被驳回 ${Math.floor(days*0.3)} 次（估计）`,
+            'color:#fbbf24;font-weight:bold;', 'color:#94a3b8;');
+    })();
 
     // 🎉 撒花（admin 精简版）
     const spawnConfetti = (count = 30) => {

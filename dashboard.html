@@ -57,6 +57,10 @@
 <div id="sparkle-container" style="position:fixed;inset:0;pointer-events:none;z-index:9999;"></div>
 
 <div id="app" class="max-w-4xl mx-auto space-y-6 relative">
+    <!-- 🏆 成就弹窗容器 -->
+    <div id="achievement-container" style="position:fixed;top:80px;right:10px;z-index:9990;pointer-events:none;"></div>
+    <!-- 🎀 凛酱随机出场 -->
+    <div id="rin-chan-container" style="position:fixed;bottom:-120px;right:-120px;z-index:999;pointer-events:none;transition:all 0.5s ease;"></div>
     
     <div v-if="showNoticeModal" class="fixed inset-0 bg-black/90 flex items-center justify-center z-[70] p-4 backdrop-blur-sm animate-fade-in-down">
         <div class="bg-gray-900 p-6 rounded-lg border-2 border-orange-500 w-full max-w-lg shadow-[0_0_30px_rgba(249,115,22,0.3)] relative">
@@ -279,6 +283,8 @@
 
             <!-- 未抽奖状态 -->
             <div v-if="!lottery.drawing && !lottery.result" class="space-y-4">
+                <!-- 🍀 幸运时间 -->
+                <div v-if="luckyActive" class="bg-amber-900/30 border border-amber-500 rounded-lg px-3 py-2 text-center text-xs text-amber-300 animate-pulse">🍀 现在是幸运时间！中奖率 UP！</div>
                 <!-- 信息栏 -->
                 <div class="grid grid-cols-2 gap-3 text-sm">
                     <div class="bg-black p-3 rounded text-center border border-purple-800/50">
@@ -468,6 +474,16 @@
 /* 🪙 NAV 数字弹跳 */
 .nav-bounce { animation: navBounce 0.5s ease-out; }
 @keyframes navBounce { 0% { transform: translateY(-8px); } 100% { transform: translateY(0); } }
+/* 🏆 成就弹窗 */
+.achievement-toast { animation: achieveSlide 3s ease-in-out forwards; }
+@keyframes achieveSlide { 0% { transform: translateX(120%); opacity: 0; } 15% { transform: translateX(0); opacity: 1; } 75% { transform: translateX(0); opacity: 1; } 100% { transform: translateX(120%); opacity: 0; } }
+/* 🎀 凛酱随机出场 */
+.rin-chan { animation: rinFloat 8s ease-in-out infinite, rinAppear 8s linear forwards; }
+@keyframes rinFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-20px); } }
+@keyframes rinAppear { 0% { opacity:0; transform:translateX(100vw); } 10% { opacity:1; transform:translateX(90vw); } 85% { opacity:1; } 100% { opacity:0; transform:translateX(-100px); } }
+/* 🎯 连抽计数器 */
+.streak-glow { animation: streakPulse 0.5s ease-in-out; }
+@keyframes streakPulse { 0% { box-shadow: 0 0 0px #a855f7; } 50% { box-shadow: 0 0 30px #a855f7, 0 0 60px #7c3aed; } 100% { box-shadow: 0 0 5px #a855f7; } }
 </style>
 
 <script>
@@ -550,6 +566,107 @@
     ];
     let funnyStatusIdx = 0;
     const getFunnyStatus = () => { funnyStatusIdx = (funnyStatusIdx + 1) % funnyStatuses.length; return funnyStatuses[funnyStatusIdx]; };
+
+    // ══════════════════════════════════════════
+    // 📑 浏览器标签页标题动画
+    // ══════════════════════════════════════════
+    let tabTitleTimer = null;
+    const tabTitles = [
+        "💰 NAV监控中...", "📈 弟弟的财富自由之路", "🏦 家庭基金 | 实时同步",
+        "🎰 今天抽奖了吗？", "💎 凛ちゃんが見てるよ", "👑 GP正在查看报表",
+        "🌟 弟弟加油！", "🪙 复利在暗中工作", "🔮 财运亨通", "🎯 命中注定暴富"
+    ];
+    let tabTitleIdx = 0;
+    const startTabTitleCarousel = () => {
+        if (tabTitleTimer) clearInterval(tabTitleTimer);
+        const original = document.title;
+        tabTitleTimer = setInterval(() => {
+            if (!document.hidden) {
+                document.title = tabTitles[tabTitleIdx % tabTitles.length];
+                tabTitleIdx++;
+            }
+        }, 4000);
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) return;
+            document.title = '💤 弟弟离开了...';
+        });
+    };
+    startTabTitleCarousel();
+
+    // ══════════════════════════════════════════
+    // 🏆 成就系统
+    // ══════════════════════════════════════════
+    let achievedBadges = new Set(JSON.parse(localStorage.getItem('lp_badges') || '[]'));
+    let drawStreak = parseInt(localStorage.getItem('draw_streak') || '0');
+    let lastDrawDate = localStorage.getItem('last_draw_date') || '';
+
+    const awardBadge = (id, title, emoji, msg) => {
+        if (achievedBadges.has(id)) return;
+        achievedBadges.add(id);
+        localStorage.setItem('lp_badges', JSON.stringify([...achievedBadges]));
+        sfx.milestone();
+        const toast = document.createElement('div');
+        toast.className = 'achievement-toast';
+        toast.innerHTML = `<div class="bg-gradient-to-r from-yellow-900/95 to-amber-900/95 border-2 border-yellow-400 rounded-lg px-4 py-3 shadow-[0_0_25px_rgba(250,204,21,0.4)] text-left" style="margin-bottom:8px;min-width:240px;">
+            <div class="flex items-center gap-2 mb-1"><span class="text-2xl">${emoji}</span><span class="text-yellow-400 font-bold text-sm">🏆 成就解锁！</span></div>
+            <div class="text-white font-bold text-sm">${title}</div><div class="text-yellow-300/70 text-xs mt-0.5">${msg}</div></div>`;
+        document.getElementById('achievement-container').appendChild(toast);
+        setTimeout(() => toast.remove(), 3200);
+    };
+
+    const checkAchievements = (nav, resultType, drawCount) => {
+        if (nav >= 500) awardBadge('nav_500', '初级资本家', '💰', 'NAV突破¥500！');
+        if (nav >= 1000) awardBadge('nav_1k', '千元户', '💎', 'NAV突破¥1,000！弟弟真棒！');
+        if (nav >= 2000) awardBadge('nav_2k', '财富新星', '🌟', 'NAV突破¥2,000！GP都惊了');
+        if (nav >= 5000) awardBadge('nav_5k', '土豪认证', '👑', 'NAV ¥5,000！你已经是家族骄傲');
+        if (resultType === 'JACKPOT') awardBadge('jackpot', '天选之人', '🎉', '中了一次JACKPOT头奖！！');
+        if (resultType === 'WIN') awardBadge('first_win', '幸运儿', '🍀', '第一次中奖！好运开始了');
+        if (drawCount >= 1) awardBadge('first_draw', '初次抽奖', '🎰', '迈出了抽奖生涯的第一步');
+        if (drawCount >= 10) awardBadge('draw_10', '抽奖老手', '🎯', '已抽奖10次！经验丰富');
+        if (drawCount >= 50) awardBadge('draw_50', '抽奖达人', '🔥', '抽奖50次！GP正在数你的钱');
+    };
+
+    // ══════════════════════════════════════════
+    // 🎀 凛酱随机出场系统
+    // ══════════════════════════════════════════
+    const rinQuotes = [
+        "NAVが上がったわよ！", "アーチャー、しっかり見張って！",
+        "弟、今日は抽選運がいいかも？", "私の宝石魔術で NAV を守るわ！",
+        "お兄ちゃん、ちゃんと管理してる？", "令呪をもって命じる… NAV、上がれ！",
+        "ビリビリしてきたわね ⚡", "宝石剣ゼルレッチ、起動！",
+        "弟の未来は私が守る！", "ふん、この程度の確率なら余裕よ",
+        "ガンドの一撃で不運を吹き飛ばす！", "時計塔仕込みの魔術、見せてあげる"
+    ];
+    let rinTimeout = null;
+
+    const spawnRin = () => {
+        if (document.hidden) return;
+        const container = document.getElementById('rin-chan-container');
+        if (!container) return;
+        const quote = rinQuotes[Math.floor(Math.random() * rinQuotes.length)];
+        container.innerHTML = `<div class="rin-chan cursor-pointer" style="pointer-events:auto;position:relative;font-size:50px;filter:drop-shadow(0 0 8px rgba(250,50,50,0.4));" onclick="this.closest('#rin-chan-container').innerHTML=''" title="点击凛酱">
+            <div style="position:absolute;bottom:100%;right:-10px;background:rgba(0,0,0,0.85);color:#fbbf24;padding:6px 12px;border-radius:12px;font-size:12px;white-space:nowrap;border:1px solid #f59e0b;animation:fadeIn 0.3s ease-out;">💬 ${quote}</div>
+            <span>🪄</span></div>`;
+        container.style.bottom = '20px';
+        container.style.right = '20px';
+        setTimeout(() => { container.style.bottom = '-120px'; container.style.right = '-120px'; }, 8000);
+        rinTimeout = setTimeout(spawnRin, 60000 + Math.random() * 180000); // 1-4分钟后再来
+    };
+    setTimeout(spawnRin, 30000); // 30秒后首次出场
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && rinTimeout) { clearTimeout(rinTimeout); setTimeout(spawnRin, 15000); }
+    });
+
+    // ══════════════════════════════════════════
+    // ⏰ 幸运时间系统
+    // ══════════════════════════════════════════
+    const isLuckyTime = () => {
+        const h = new Date().getHours();
+        const m = new Date().getMinutes();
+        // 特殊时间：8:08, 8:28, 10:10, 12:00, 18:08, 20:08, 22:22
+        const lucky = [[8,8],[8,28],[10,10],[12,0],[18,8],[20,8],[22,22]];
+        return lucky.some(([lh, lm]) => h === lh && m === lm) || (m === h) || (m % 11 === 0);
+    };
 
     // ══════════════════════════════════════════
     // 🎮 Konami Code 彩蛋 (↑↑↓↓←→←→BA)
@@ -696,6 +813,8 @@
 
             // 🎰 抽奖状态
             const lottery = ref({ enabled: true, cost: 5, current_nav: 0, can_play: false, prizes: [], recent_records: [], drawing: false, spinning: false, result: null, resultType: '', resultName: '', resultIcon: '', resultValue: 0, resultMessage: '', newNav: 0 });
+            const luckyActive = ref(false);
+            const drawCount = ref(0);
 
             const fetchLotteryStatus = async () => {
                 try {
@@ -718,6 +837,7 @@
                 lottery.value.spinning = true;
                 lottery.value.drawing = true;
                 lottery.value.result = null;
+                luckyActive.value = isLuckyTime();
 
                 // 启动老虎机动画（CSS驱动，3个 reel 各自旋转）
                 const reels = document.querySelectorAll('.slot-strip');
@@ -754,9 +874,20 @@
                         else { sfx.lose(); }
                         lottery.value.resultIcon = d.prize_icon;
                         lottery.value.resultValue = d.prize_value;
-                        lottery.value.resultMessage = d.message;
-                        lottery.value.newNav = d.new_nav;
-                        if (d.new_nav) navData.value.R_total = d.new_nav;
+                    lottery.value.resultMessage = d.message;
+                    lottery.value.newNav = d.new_nav;
+                    if (d.new_nav) { navData.value.R_total = d.new_nav; updateNavMood(d.new_nav); }
+
+                    // 🏆 成就系统 + 连抽
+                    const today = new Date().toDateString();
+                    if (lastDrawDate !== today) { drawStreak = 0; }
+                    drawStreak++; lastDrawDate = today;
+                    localStorage.setItem('draw_streak', drawStreak);
+                    localStorage.setItem('last_draw_date', today);
+                    drawCount.value = (drawCount.value || 0) + 1;
+                    checkAchievements(d.new_nav || lottery.value.current_nav, d.result_type, drawCount.value);
+                    if (drawStreak === 7) awardBadge('streak_7','周连续抽奖王','🔥','连续7天！毅力惊人');
+                    if (drawStreak === 30) awardBadge('streak_30','月连续抽奖神','👑','连续30天！GP开始慌了');
 
                         // 头奖：播放彩带动画3秒
                         if (d.result_type === 'JACKPOT') {
@@ -1336,6 +1467,7 @@
                 navData, allocations, allocationMeta, limitStatus, quarterlyInfo, notices,
                 navDisplay, navMood, clickNav, isAuthenticated, showAuthModal, pinInput, verifyPin, closeAuthModal, logout, initiateCall,
                 showEncourage, encourageText, nextEncourage, fortuneText, showFortune, drawFortune,
+                luckyActive, drawCount,
                 showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall,
                 lottery, doLotteryDraw,
                 form, alphaForm, fileInput, msgInput, msgFileInput, selectedMessageFile, messages, myRequests,
