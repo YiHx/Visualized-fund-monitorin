@@ -525,6 +525,14 @@
                     if (!vRes.ok) { authError.value = 'PIN错误，无法注册指纹'; authLoading.value = false; return; }
                     const vData = await vRes.json();
 
+                    // 先拉取已注册凭证列表，避免重复创建
+                    const rdy = await fetch(`${API_BASE}/gp/webauthn/ready`);
+                    const rdyData = await rdy.json();
+                    const excludeCreds = (rdyData.credential_ids || []).map(cid => ({
+                        type: 'public-key',
+                        id: _b64decode_buf(cid)
+                    }));
+
                     const cred = await navigator.credentials.create({
                         publicKey: {
                             challenge: new Uint8Array(32),
@@ -532,77 +540,56 @@
                             user: { id: new Uint8Array(16), name: 'gp', displayName: 'GP Admin' },
                             pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
                             authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'preferred' },
+                            excludeCredentials: excludeCreds,
                             timeout: 60000, attestation: 'none'
                         }
                     });
                     const response = cred.response;
                     const pkBytes = new Uint8Array(response.getPublicKey());
 
-                    // 解析 DER 编码的 SubjectPublicKeyInfo，提取 P-256 x/y 坐标
                     let x = '', y = '';
                     const extractXY = (buf) => {
-                        // SPKI: 30 59 30 13 06 07 2a8648ce3d0201 06 08 2a8648ce3d030107 03 42 00 04 [32B x] [32B y]
-                        // 找到最后的 BIT STRING (tag 0x03) 并从中提取坐标
                         let pos = 0;
                         const readTag = () => { const t = buf[pos]; pos++; return t; };
                         const readLen = () => {
                             let l = buf[pos]; pos++;
-                            if (l >= 128) {
-                                const numOctets = l & 0x7F;
-                                l = 0;
-                                for (let i = 0; i < numOctets; i++) { l = (l << 8) | buf[pos]; pos++; }
-                            }
+                            if (l >= 128) { const numOctets = l & 0x7F; l = 0; for (let i = 0; i < numOctets; i++) { l = (l << 8) | buf[pos]; pos++; } }
                             return l;
                         };
                         const skipTLV = () => { readTag(); const l = readLen(); pos += l; };
-
-                        // SEQUENCE (0x30) - outer
                         if (readTag() !== 0x30) return false;
                         const outerLen = readLen();
                         const afterOuter = pos + outerLen;
-
-                        // SEQUENCE (0x30) - AlgorithmIdentifier
                         skipTLV();
-
-                        // BIT STRING (0x03) - contains the public key point
-                        if (readTag() !== 0x03) return false;
+                        if (readTag() !== 0x03) { while (pos < afterOuter && buf[pos] !== 0x03) { skipTLV(); if (pos >= afterOuter) return false; } readTag(); }
                         const bitStringLen = readLen();
-                        const unusedBits = buf[pos]; pos++; // should be 0
-                        if (buf[pos] === 0x04) { // uncompressed point
-                            pos++; // skip 0x04
-                            const coordLen = (bitStringLen - 2); // minus unusedBits byte and 0x04 byte
-                            const halfLen = coordLen / 2;
-                            x = Array.from(buf.slice(pos, pos + halfLen)).map(b=>b.toString(16).padStart(2,'0')).join('');
-                            pos += halfLen;
-                            y = Array.from(buf.slice(pos, pos + halfLen)).map(b=>b.toString(16).padStart(2,'0')).join('');
-                            return true;
-                        }
+                        const unusedBits = buf[pos]; pos++;
+                        if (buf[pos] === 0x04) { pos++; const cLen = (bitStringLen - 2) / 2; for (let i = 0; i < cLen; i++) x += buf[pos+i].toString(16).padStart(2,'0'); pos += cLen; for (let i = 0; i < cLen; i++) y += buf[pos+i].toString(16).padStart(2,'0'); return true; }
                         return false;
                     };
 
                     if (extractXY(pkBytes) && x && y) {
                         const fd = new FormData();
-                        fd.append('credential', cred.id);
-                        fd.append('x', x); fd.append('y', y);
+                        fd.append('credential', cred.id); fd.append('x', x); fd.append('y', y);
                         fd.append('token', vData.gp_token);
                         const regRes = await fetch(`${API_BASE}/gp/webauthn/register`, { method:'POST', body:fd });
                         if (regRes.ok) {
-                            alert('✅ 指纹已注册成功！下次可直接指纹解锁。');
-                            pinInput.value = '';
-                            authStep.value = 'fingerprint';
-                            webauthnReady.value = true;
+                            alert('指纹已注册成功！下次可直接指纹解锁。');
+                            pinInput.value = ''; authStep.value = 'fingerprint'; webauthnReady.value = true;
                         } else {
-                            const ed = await regRes.json();
-                            authError.value = ed.detail || '指纹注册失败，请重试';
+                            authError.value = (await regRes.json()).detail || '注册失败';
                         }
                     } else {
-                        // 调试：打印前几个字节帮助排查
-                        const hexPreview = Array.from(pkBytes.slice(0, 10)).map(b=>b.toString(16).padStart(2,'0')).join(' ');
-                        authError.value = '无法解析密钥格式（' + hexPreview + '...），请重试';
-                        console.error('SPKI parse failed. First bytes:', Array.from(pkBytes).map(b=>'0x'+b.toString(16).padStart(2,'0')).join(' '));
+                        authError.value = '无法解析密钥，请重试';
                     }
                 } catch(e) {
-                    authError.value = '注册失败: ' + (e.message || '请确保设备支持指纹/面容');
+                    if (e.name === 'InvalidStateError') {
+                        authError.value = '设备上已有指纹凭证。请在系统设置中删除旧的凭证后重试，或直接使用指纹登录。';
+                    } else if (e.name === 'NotAllowedError') {
+                        authError.value = '操作被取消或设备不支持指纹认证';
+                    } else {
+                        authError.value = '注册失败: ' + (e.message || '请重试');
+                    }
                     console.error('WebAuthn register:', e);
                 }
                 authLoading.value = false;
