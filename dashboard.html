@@ -246,7 +246,7 @@
                 <div class="bg-black/80 p-3 rounded border border-gray-800">
                     <div class="text-xs text-gray-500 mb-2">🏆 奖池预览</div>
                     <div class="flex flex-wrap gap-2">
-                        <span v-for="p in lottery.prizes" :key="p.id" class="text-xs bg-purple-900/40 border border-purple-800/50 px-2 py-1 rounded text-gray-300">{{ p.icon }} {{ p.name.replace(p.icon+' ','') }} <span class="text-purple-400">(权重{{ p.weight }})</span></span>
+                        <span v-for="p in lottery.prizes" :key="p.id" class="text-xs bg-purple-900/40 border border-purple-800/50 px-2 py-1 rounded text-gray-300">{{ p.icon }} {{ p.name.replace(p.icon+' ','') }}</span>
                     </div>
                 </div>
 
@@ -257,34 +257,63 @@
                 </button>
             </div>
 
-            <!-- 抽奖动画中 -->
-            <div v-if="lottery.drawing" class="space-y-4">
-                <div class="bg-black p-6 rounded-lg border border-purple-800 text-center">
-                    <div class="text-5xl mb-4 animate-bounce">{{ lottery.slotDisplay || '🎰' }}</div>
-                    <div class="text-purple-400 font-bold text-lg animate-pulse">抽奖中...</div>
-                    <div class="flex justify-center space-x-1 mt-4">
-                        <span class="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style="animation-delay:0s"></span>
-                        <span class="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style="animation-delay:0.15s"></span>
-                        <span class="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style="animation-delay:0.3s"></span>
+            <!-- 🎰 老虎机动画 -->
+            <div v-if="lottery.drawing || lottery.result" class="space-y-4">
+                <!-- 老虎机主体 -->
+                <div class="bg-black rounded-xl border-2 p-4 relative overflow-hidden" :class="lottery.result ? (lottery.resultType === 'JACKPOT' ? 'border-yellow-400 shadow-[0_0_40px_rgba(250,204,21,0.5)]' : lottery.resultType === 'WIN' ? 'border-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.3)]' : 'border-gray-600') : 'border-purple-800 shadow-[0_0_15px_rgba(168,85,247,0.2)]'">
+                    <!-- 装饰灯 -->
+                    <div class="absolute top-0 left-0 right-0 flex justify-around py-1 z-10">
+                        <span v-for="i in 12" :key="'top-'+i" class="w-2 h-2 rounded-full" :class="lottery.drawing ? 'bg-purple-400 animate-pulse' : lottery.resultType === 'JACKPOT' ? 'bg-yellow-400 animate-ping' : 'bg-emerald-400'"></span>
+                    </div>
+                    <!-- 三列老虎机 -->
+                    <div class="flex justify-center gap-3 mt-4 mb-2">
+                        <div class="slot-reel w-20 h-24 bg-gray-900 rounded-lg border-2 border-gray-700 overflow-hidden relative" :class="lottery.drawing ? 'shadow-[inset_0_0_15px_rgba(168,85,247,0.3)]' : ''">
+                            <div class="slot-strip absolute inset-x-0" :class="lottery.drawing ? 'spinning' : 'stopped'" :style="lottery.drawing ? 'animation-duration: '+(400+Math.random()*300)+'ms' : ''">
+                                <div class="text-4xl text-center py-3">🎰</div><div class="text-4xl text-center py-3">💰</div><div class="text-4xl text-center py-3">💎</div><div class="text-4xl text-center py-3">🎁</div><div class="text-4xl text-center py-3">🏆</div><div class="text-4xl text-center py-3">🌟</div><div class="text-4xl text-center py-3">💨</div><div class="text-4xl text-center py-3">🔄</div>
+                            </div>
+                        </div>
+                        <div class="slot-reel w-20 h-24 bg-gray-900 rounded-lg border-2 border-gray-700 overflow-hidden relative" :class="lottery.drawing ? 'shadow-[inset_0_0_15px_rgba(168,85,247,0.3)]' : ''">
+                            <div class="slot-strip absolute inset-x-0" :class="lottery.drawing ? 'spinning' : 'stopped'" :style="lottery.drawing ? 'animation-duration: '+(500+Math.random()*300)+'ms' : ''">
+                                <div class="text-4xl text-center py-3">💨</div><div class="text-4xl text-center py-3">🎰</div><div class="text-4xl text-center py-3">🎁</div><div class="text-4xl text-center py-3">🏆</div><div class="text-4xl text-center py-3">💎</div><div class="text-4xl text-center py-3">🔄</div><div class="text-4xl text-center py-3">🌟</div><div class="text-4xl text-center py-3">💰</div>
+                            </div>
+                        </div>
+                        <div class="slot-reel w-20 h-24 bg-gray-900 rounded-lg border-2 border-gray-700 overflow-hidden relative" :class="lottery.drawing ? 'shadow-[inset_0_0_15px_rgba(168,85,247,0.3)]' : ''">
+                            <div class="slot-strip absolute inset-x-0" :class="lottery.drawing ? 'spinning' : 'stopped'" :style="lottery.drawing ? 'animation-duration: '+(600+Math.random()*300)+'ms' : ''">
+                                <div class="text-4xl text-center py-3">🌟</div><div class="text-4xl text-center py-3">💨</div><div class="text-4xl text-center py-3">🏆</div><div class="text-4xl text-center py-3">🎰</div><div class="text-4xl text-center py-3">💰</div><div class="text-4xl text-center py-3">🎁</div><div class="text-4xl text-center py-3">🔄</div><div class="text-4xl text-center py-3">💎</div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 结果揭示 -->
+                    <div class="text-center mt-3" :class="lottery.drawing ? 'opacity-0' : 'animate-fade-in'">
+                        <div v-if="lottery.result" class="text-5xl mb-2" :class="lottery.resultType === 'JACKPOT' ? 'animate-bounce' : ''">{{ lottery.resultIcon }}</div>
+                        <div v-if="lottery.result" class="text-xl font-bold" :class="lottery.resultType === 'JACKPOT' ? 'text-yellow-400' : lottery.resultType === 'WIN' ? 'text-emerald-400' : 'text-gray-400'">
+                            {{ lottery.resultType === 'JACKPOT' ? '🎉 天选之人！！' : lottery.resultType === 'WIN' ? '🎊 恭喜中奖！' : '💨 谢谢参与' }}
+                        </div>
+                        <div v-if="lottery.result" class="text-white font-bold mt-1">{{ lottery.resultName }}</div>
+                        <div v-if="lottery.result && lottery.resultValue > 0" class="text-2xl font-bold mt-2" :class="lottery.resultType === 'JACKPOT' ? 'text-yellow-400 sparkle-text' : 'text-emerald-400'">
+                            +¥{{ lottery.resultValue.toFixed(2) }}
+                        </div>
+                        <div v-if="lottery.drawing" class="text-purple-400 font-bold animate-pulse text-lg">🎰 抽奖中...</div>
+                    </div>
+                    <!-- 底部装饰 -->
+                    <div class="absolute bottom-0 left-0 right-0 flex justify-around py-1 z-10">
+                        <span v-for="i in 12" :key="'bot-'+i" class="w-2 h-2 rounded-full" :class="lottery.drawing ? 'bg-purple-400 animate-pulse' : lottery.resultType === 'JACKPOT' ? 'bg-yellow-400 animate-ping' : 'bg-emerald-400'"></span>
                     </div>
                 </div>
-            </div>
-
-            <!-- 抽奖结果 -->
-            <div v-if="lottery.result" class="space-y-4" :class="lottery.resultType === 'JACKPOT' ? 'animate-bounce' : ''">
-                <div class="p-5 rounded-lg text-center border-2" :class="lottery.resultType === 'JACKPOT' ? 'bg-yellow-900/40 border-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.4)]' : lottery.resultType === 'WIN' ? 'bg-emerald-900/30 border-emerald-500' : 'bg-gray-800 border-gray-600'">
-                    <div class="text-5xl mb-3">{{ lottery.resultIcon || '🎁' }}</div>
-                    <div class="text-2xl font-bold mb-2" :class="lottery.resultType === 'JACKPOT' ? 'text-yellow-400' : lottery.resultType === 'WIN' ? 'text-emerald-400' : 'text-gray-400'">
-                        {{ lottery.resultType === 'JACKPOT' ? '🎉 头奖！！！' : lottery.resultType === 'WIN' ? '🎊 中奖！' : '💨 谢谢参与' }}
+                <!-- 操作栏 -->
+                <div v-if="lottery.result" class="flex gap-3">
+                    <div class="flex-1 bg-black/60 rounded-lg border border-gray-700 px-4 py-2 flex items-center justify-between">
+                        <span class="text-gray-400 text-xs">余额</span>
+                        <span class="text-emerald-400 font-mono font-bold">¥{{ lottery.newNav }}</span>
                     </div>
-                    <div class="text-white font-bold text-lg">{{ lottery.resultName }}</div>
-                    <div v-if="lottery.resultValue > 0" class="mt-2 text-lg" :class="lottery.resultType === 'JACKPOT' ? 'text-yellow-400 font-bold' : 'text-emerald-400'">
-                        +¥{{ lottery.resultValue.toFixed(2) }}
-                    </div>
-                    <div class="text-gray-400 text-sm mt-3">{{ lottery.resultMessage }}</div>
-                    <div class="text-gray-500 text-xs mt-2">新净值：¥{{ lottery.newNav || '--' }}</div>
+                    <button @click="lottery.result = null; lottery.drawing = false" class="bg-purple-700 hover:bg-purple-600 text-white font-bold px-6 py-2 rounded-lg transition text-sm">再来一次</button>
                 </div>
-                <button @click="lottery.result = null" class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-lg transition">再来一次</button>
+                <!-- 粒子特效（仅头奖） -->
+                <div v-if="lottery.result && lottery.resultType === 'JACKPOT'" class="confetti-container absolute inset-0 pointer-events-none overflow-hidden" style="z-index: 200;">
+                    <span v-for="i in 30" :key="'confetti-'+i" class="confetti-particle absolute text-lg animate-fall" :style="{left: (i*3.3)%100+'%', animationDelay: (i*0.08)+'s', animationDuration: (1.5+Math.random()*2)+'s'}">
+                        {{ ['🎉','✨','💫','🌟','🎊','💎','💰','⭐'][i%8] }}
+                    </span>
+                </div>
             </div>
         </div>
 
@@ -354,7 +383,19 @@
     </div>
 </div>
 
-<style>.animate-pulse-slow { animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite; } @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .8; } } .animate-fade-in-down { animation: fadeInDown 0.4s ease-out; } @keyframes fadeInDown { from { opacity: 0; transform: translateY(-15px); } to { opacity: 1; transform: translateY(0); } }</style>
+<style>.animate-pulse-slow { animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite; } @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .8; } } .animate-fade-in-down { animation: fadeInDown 0.4s ease-out; } @keyframes fadeInDown { from { opacity: 0; transform: translateY(-15px); } to { opacity: 1; transform: translateY(0); } } .animate-fade-in { animation: fadeIn 0.5s ease-out; } @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.slot-reel { perspective: 200px; }
+.slot-strip { top: 0; }
+.slot-strip.spinning { animation: slotSpin linear infinite; }
+.slot-strip.stopped { animation: slotStop 0.3s ease-out forwards; top: -96px; }
+@keyframes slotSpin { 0% { top: 0; } 100% { top: -336px; } }
+@keyframes slotStop { 0% { top: -48px; filter: blur(4px); } 50% { top: -100px; filter: blur(2px); } 80% { top: -92px; filter: blur(1px); } 100% { top: -96px; filter: blur(0); } }
+.sparkle-text { animation: sparkle 0.6s ease-in-out infinite alternate; }
+@keyframes sparkle { 0% { text-shadow: 0 0 5px #fbbf24, 0 0 10px #f59e0b; } 100% { text-shadow: 0 0 20px #fbbf24, 0 0 40px #f59e0b, 0 0 60px #fbbf24; } }
+.confetti-container { z-index: 200; }
+.confetti-particle { top: -20px; animation: confettiFall linear forwards; }
+@keyframes confettiFall { 0% { top: -20px; opacity: 1; transform: rotate(0deg) scale(1); } 80% { opacity: 1; } 100% { top: 110%; opacity: 0; transform: rotate(720deg) scale(0.3); } }
+</style>
 
 <script>
     const { createApp, ref, onMounted, onUnmounted } = Vue
@@ -383,7 +424,7 @@
             const notices = ref([]);
 
             // 🎰 博彩状态
-            const lottery = ref({ enabled: true, cost: 5, current_nav: 0, can_play: false, prizes: [], recent_records: [], drawing: false, spinning: false, slotDisplay: '🎰', result: null, resultType: '', resultName: '', resultIcon: '', resultValue: 0, resultMessage: '', newNav: 0 });
+            const lottery = ref({ enabled: true, cost: 5, current_nav: 0, can_play: false, prizes: [], recent_records: [], drawing: false, spinning: false, result: null, resultType: '', resultName: '', resultIcon: '', resultValue: 0, resultMessage: '', newNav: 0 });
 
             const fetchLotteryStatus = async () => {
                 try {
@@ -407,22 +448,31 @@
                 lottery.value.drawing = true;
                 lottery.value.result = null;
 
-                // 滚动动画
-                const icons = lottery.value.prizes.map(p => p.icon).filter(Boolean);
-                let animCount = 0;
-                const animInterval = setInterval(() => {
-                    lottery.value.slotDisplay = icons[Math.floor(Math.random() * icons.length)] || '🎰';
-                    animCount++;
-                    if (animCount > 12) clearInterval(animInterval);
-                }, 100);
+                // 启动老虎机动画（CSS驱动，3个 reel 各自旋转）
+                const reels = document.querySelectorAll('.slot-strip');
+                reels.forEach(r => { r.classList.add('spinning'); r.classList.remove('stopped'); });
 
                 try {
-                    const res = await fetch(`${API_BASE}/lp/lottery_draw`, { method: 'POST' });
+                    // 并行请求 + 至少 2.5 秒动画
+                    const [res] = await Promise.all([
+                        fetch(`${API_BASE}/lp/lottery_draw`, { method: 'POST' }),
+                        new Promise(r => setTimeout(r, 2500))
+                    ]);
+
                     const d = await res.json();
-                    clearInterval(animInterval);
+
+                    // 依次停止 reel（像真老虎机）
+                    for (let i = 0; i < 3; i++) {
+                        if (reels[i]) {
+                            reels[i].classList.remove('spinning');
+                            reels[i].classList.add('stopped');
+                        }
+                        await new Promise(r => setTimeout(r, 400));
+                    }
+
                     lottery.value.drawing = false;
+
                     if (d.status === 'success') {
-                        lottery.value.slotDisplay = d.prize_icon || '🎁';
                         lottery.value.result = true;
                         lottery.value.resultType = d.result_type;
                         lottery.value.resultName = d.prize_name;
@@ -430,13 +480,19 @@
                         lottery.value.resultValue = d.prize_value;
                         lottery.value.resultMessage = d.message;
                         lottery.value.newNav = d.new_nav;
-                        // 同步更新 NAV 显示
                         if (d.new_nav) navData.value.R_total = d.new_nav;
+
+                        // 头奖：播放彩带动画3秒
+                        if (d.result_type === 'JACKPOT') {
+                            setTimeout(() => { /* confetti auto-clears via Vue */ }, 3500);
+                        }
                     } else {
                         alert(d.detail || '抽奖失败');
                     }
                 } catch(e) {
                     lottery.value.drawing = false;
+                    lottery.value.result = null;
+                    reels.forEach(r => { if (r) { r.classList.remove('spinning'); r.classList.add('stopped'); } });
                     alert('抽奖请求失败，请检查网络');
                 }
                 lottery.value.spinning = false;
@@ -894,7 +950,7 @@
 
             const logout = () => {
                 isAuthenticated.value = false; localStorage.removeItem('lp_auth');
-                limitStatus.value = {}; messages.value = []; myRequests.value = []; notices.value = []; lottery.value = { enabled: true, cost: 5, current_nav: 0, can_play: false, prizes: [], recent_records: [], drawing: false, spinning: false, slotDisplay: '🎰', result: null, resultType: '', resultName: '', resultIcon: '', resultValue: 0, resultMessage: '', newNav: 0 };
+                limitStatus.value = {}; messages.value = []; myRequests.value = []; notices.value = []; lottery.value = { enabled: true, cost: 5, current_nav: 0, can_play: false, prizes: [], recent_records: [], drawing: false, spinning: false, result: null, resultType: '', resultName: '', resultIcon: '', resultValue: 0, resultMessage: '', newNav: 0 };
                 pinInput.value = ''; 
                 hasSeenNoticesThisSession.value = false;
             };

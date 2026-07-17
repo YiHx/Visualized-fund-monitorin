@@ -195,7 +195,7 @@
                             <div class="flex items-center gap-1.5 flex-1 min-w-0">
                                 <span class="text-sm">{{ p.icon }}</span>
                                 <span class="text-gray-300 truncate max-w-[90px]" :title="p.name">{{ p.name }}</span>
-                                <span class="text-gray-500">(权重{{ p.weight }})</span>
+                                <span class="text-gray-500">({{ lottoProb(p) }})</span>
                             </div>
                             <div class="flex gap-1">
                                 <button @click="lotteryTogglePrize(p)" class="text-xs px-2 py-0.5 rounded border" :class="p.is_active ? 'border-gray-600 text-gray-400 hover:bg-gray-800' : 'border-red-700 text-red-400 hover:bg-red-900/40'" :title="p.is_active ? '停用' : '启用'">{{ p.is_active ? '⏸' : '▶' }}</button>
@@ -214,7 +214,7 @@
                             <option value="SPECIAL">特殊</option>
                         </select>
                         <input v-model="lottoForm.value" type="number" step="0.1" placeholder="价值" class="w-16 bg-black border border-gray-700 rounded p-1 text-white text-xs focus:outline-none focus:border-purple-500">
-                        <input v-model="lottoForm.weight" type="number" placeholder="权重" class="w-14 bg-black border border-gray-700 rounded p-1 text-white text-xs focus:outline-none focus:border-purple-500">
+                        <input v-model="lottoForm.weight" type="number" placeholder="概率权重" title="数值越大中奖概率越高" class="w-16 bg-black border border-gray-700 rounded p-1 text-white text-xs focus:outline-none focus:border-purple-500">
                         <button type="submit" class="bg-purple-700 hover:bg-purple-600 text-white text-xs font-bold px-3 py-1 rounded transition">+添加</button>
                     </form>
                 </div>
@@ -687,6 +687,13 @@
                 if (res.ok) fetchLottoConfig();
             };
 
+            const lottoProb = (prize) => {
+                if (!prize || !lottoConfig.value.prizes.length) return '0%';
+                const total = lottoConfig.value.prizes.reduce((s, p) => s + (p.is_active ? p.weight : 0), 0);
+                if (total <= 0) return '0%';
+                return (prize.weight / total * 100).toFixed(1) + '%';
+            };
+
             const lotteryAddPrize = async () => {
                 if (!lottoForm.value.name) { alert('请输入奖品名称'); return; }
                 const fd = new FormData();
@@ -1007,7 +1014,7 @@
                 document.removeEventListener('visibilitychange', restartPolling);
                 if (recoveredBannerTimer) clearTimeout(recoveredBannerTimer);
             });
-            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, notificationLogs, onlyFailedLogs, retryingLogId, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, retryNotification, replyMsg, isImageFileAdmin, isVideoFileAdmin, openMediaModalAdmin, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown, isAuthenticated, pinInput, authError, authLoading, verifyPin, logout, incomingCall, showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall, acceptIncomingCall, declineIncomingCall, lottoConfig, lottoStats, lottoForm, fetchLottoConfig, fetchLottoStats, lotteryUpdateCost, lotteryToggleEnabled, lotteryTogglePrize, lotteryDeletePrize, lotteryAddPrize, lotteryResetRecords }
+            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, notificationLogs, onlyFailedLogs, retryingLogId, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, retryNotification, replyMsg, isImageFileAdmin, isVideoFileAdmin, openMediaModalAdmin, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown, isAuthenticated, pinInput, authError, authLoading, verifyPin, logout, incomingCall, showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall, acceptIncomingCall, declineIncomingCall, lottoConfig, lottoStats, lottoForm, lottoProb, fetchLottoConfig, fetchLottoStats, lotteryUpdateCost, lotteryToggleEnabled, lotteryTogglePrize, lotteryDeletePrize, lotteryAddPrize, lotteryResetRecords }
         }
     }).mount('#admin-app')
 </script>
