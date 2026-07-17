@@ -133,7 +133,7 @@ else
     sudo pkill -f "uvicorn main:app" 2>/dev/null || true
     sleep 2
     cd \$TARGET
-    sudo bash -c 'nohup python3 -m uvicorn main:app --host 127.0.0.1 --port 8000 > server.log 2>&1 &'
+    sudo bash -c 'set -a; source /etc/environment 2>/dev/null; set +a; nohup python3 -m uvicorn main:app --host 127.0.0.1 --port 8000 > server.log 2>&1 &'
     sleep 3
     PID=\$(pgrep -f "uvicorn main:app" || echo "")
     if [ -z "\$PID" ]; then
