@@ -1134,3 +1134,84 @@ def admin_page():
 @app.get("/video_call", include_in_schema=False)
 def video_call_page():
     return FileResponse(os.path.join(BASE_DIR, "video_call.html"))
+
+
+# ==========================================
+# 🥚🥚🥚 趣味短链接跳转彩蛋
+# ==========================================
+from fastapi.responses import RedirectResponse
+
+SHORTCUTS = {
+    "/bilibili": "https://www.bilibili.com",
+    "/b站": "https://www.bilibili.com",
+    "/b": "https://www.bilibili.com",
+    "/github": "https://github.com/YiHx/Visualized-fund-monitorin",
+    "/git": "https://github.com/YiHx/Visualized-fund-monitorin",
+    "/repo": "https://github.com/YiHx/Visualized-fund-monitorin",
+    "/youtube": "https://www.youtube.com",
+    "/yt": "https://www.youtube.com",
+    "/google": "https://www.google.com",
+    "/gg": "https://www.google.com",
+    "/baidu": "https://www.baidu.com",
+    "/bd": "https://www.baidu.com",
+    "/zhihu": "https://www.zhihu.com",
+    "/weibo": "https://www.weibo.com",
+    "/douyin": "https://www.douyin.com",
+    "/dy": "https://www.douyin.com",
+    "/taobao": "https://www.taobao.com",
+    "/jd": "https://www.jd.com",
+    "/reddit": "https://www.reddit.com",
+    "/twitter": "https://x.com",
+    "/x": "https://x.com",
+    "/chatgpt": "https://chat.openai.com",
+    "/ai": "https://chat.openai.com",
+    "/gpt": "https://chat.openai.com",
+    "/wiki": "https://zh.wikipedia.org",
+    "/pornhub": "https://www.bilibili.com/video/BV1GJ411x7h7",
+    "/ph": "https://www.bilibili.com/video/BV1GJ411x7h7",
+    "/rickroll": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "/rick": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "/rin": "https://www.bilibili.com/video/BV1GJ411x7h7",
+    "/fate": "https://www.bilibili.com/bangumi/media/md28236452",
+    "/navy": "https://www.navy.com",
+    "/42": "https://en.wikipedia.org/wiki/42_(number)",
+    "/answer": "https://en.wikipedia.org/wiki/Phrases_from_The_Hitchhiker%27s_Guide_to_the_Galaxy#Answer_to_the_Ultimate_Question_of_Life,_the_Universe,_and_Everything_(42)",
+    "/money": "https://www.bilibili.com/video/BV1uT4y1P7CX",
+    "/lottery": "https://www.bilibili.com/video/BV1Es411379s",
+    "/cat": "https://www.bilibili.com/video/BV1kQ4y1P7Pd",
+    "/dog": "https://www.bilibili.com/video/BV1iV411k7dV",
+    "/miku": "https://www.bilibili.com/video/BV1bBcAeNEm2",
+    "/anime": "https://www.bilibili.com/anime",
+    "/game": "https://www.bilibili.com/v/game",
+    "/music": "https://music.163.com",
+    "/163": "https://music.163.com",
+    "/qqmusic": "https://y.qq.com",
+    "/weather": "https://www.accuweather.com",
+    "/map": "https://maps.google.com",
+    "/translate": "https://translate.google.com",
+    "/nb": "https://github.com/YiHx/Visualized-fund-monitorin",
+    "/status": "https://status.github.com",
+    "/easteregg": "/",
+    "/secret": "/admin",
+    "/gp": "/admin",
+    "/lp": "/",
+    "/dashboard": "/",
+    "/homura": "https://www.bilibili.com/bangumi/media/md28236452",
+    "/senko": "https://www.bilibili.com/video/BV1dJ411U7N5",
+    "/touhou": "https://www.bilibili.com/v/touhou",
+    "/genshin": "https://www.bilibili.com/v/genshin",
+    "/starrail": "https://www.bilibili.com/v/starrail",
+    "/arknights": "https://www.bilibili.com/v/arknights",
+    "/bling": "https://www.bilibili.com/video/BV1uT4y1P7CX",
+    "/chill": "https://www.bilibili.com/video/BV1Es411379s",
+    "/focus": "https://www.bilibili.com/video/BV12N4y1J7iG",
+    "/sleep": "https://www.bilibili.com/video/BV1dJ411U7N5",
+    "/coffee": "https://www.bilibili.com/video/BV1kQ4y1P7Pd",
+    "/donate": "https://www.bilibili.com/video/BV1uT4y1P7CX",
+}
+
+for path, target in SHORTCUTS.items():
+    def _make_redirect(target_url=target):
+        return lambda target_url=target_url: RedirectResponse(url=target_url, status_code=302)
+    _make_redirect.__name__ = f"redirect_{path.replace('/', '_')}"
+    app.get(path, include_in_schema=False)(_make_redirect())
