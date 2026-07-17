@@ -98,6 +98,31 @@ class DBNotificationLog(Base):
     status = Column(String, nullable=False)  # SUCCESS / FAILED
     response_msg = Column(String, nullable=True)
 
+# ── 博彩系统模型 ────────────────────────────────
+class DBLotteryPrize(Base):
+    __tablename__ = "lottery_prizes"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    prize_type = Column(String, nullable=False)   # CASH / MULTIPLIER / NOTHING / SPECIAL
+    value = Column(Float, nullable=False, default=0.0)
+    weight = Column(Integer, nullable=False, default=10)
+    is_active = Column(Integer, nullable=False, default=1)
+    icon = Column(String, nullable=False, default="🎁")
+
+class DBLotteryRecord(Base):
+    __tablename__ = "lottery_records"
+    id = Column(Integer, primary_key=True, index=True)
+    draw_time = Column(DateTime, nullable=False, default=datetime.now)
+    cost = Column(Float, nullable=False)
+    prize_name = Column(String, nullable=False)
+    prize_value = Column(Float, nullable=False, default=0.0)
+    result_type = Column(String, nullable=False)   # WIN / LOSE / JACKPOT
+
+class DBSystemConfig(Base):
+    __tablename__ = "system_config"
+    key = Column(String, primary_key=True)
+    value = Column(String, nullable=False)
+
 Base.metadata.create_all(bind=engine)
 
 # ==========================================
@@ -321,6 +346,105 @@ def get_quarterly_info(db: Session):
 # ==========================================
 # 3. 接口路由
 # ==========================================
+# 2.5 博彩抽奖引擎
+# ==========================================
+import random
+
+def _get_config(db: Session, key: str, default: str = "") -> str:
+    row = db.query(DBSystemConfig).filter(DBSystemConfig.key == key).first()
+    return row.value if row else default
+
+def _set_config(db: Session, key: str, value: str):
+    row = db.query(DBSystemConfig).filter(DBSystemConfig.key == key).first()
+    if row:
+        row.value = value
+    else:
+        db.add(DBSystemConfig(key=key, value=value))
+    db.commit()
+
+def _ensure_default_prizes(db: Session):
+    if db.query(DBLotteryPrize).count() > 0:
+        return
+    defaults = [
+        DBLotteryPrize(name="\U0001f3c6 头等大奖", prize_type="CASH", value=200.0, weight=1, icon="\U0001f3c6"),
+        DBLotteryPrize(name="\U0001f48e 钻石奖", prize_type="CASH", value=50.0, weight=3, icon="\U0001f48e"),
+        DBLotteryPrize(name="\U0001f4b0 现金红包", prize_type="CASH", value=10.0, weight=8, icon="\U0001f4b0"),
+        DBLotteryPrize(name="\U0001f504 双倍返还", prize_type="MULTIPLIER", value=2.0, weight=5, icon="\U0001f504"),
+        DBLotteryPrize(name="\U0001f519 1.5倍返还", prize_type="MULTIPLIER", value=1.5, weight=10, icon="\U0001f519"),
+        DBLotteryPrize(name="\U0001f3ab 再来一次", prize_type="SPECIAL", value=0.0, weight=7, icon="\U0001f3ab"),
+        DBLotteryPrize(name="\U0001f4a8 谢谢参与", prize_type="NOTHING", value=0.0, weight=50, icon="\U0001f4a8"),
+        DBLotteryPrize(name="\U0001f31f 幸运星", prize_type="CASH", value=5.0, weight=10, icon="\U0001f31f"),
+    ]
+    for p in defaults:
+        db.add(p)
+    db.commit()
+
+def _ensure_default_config(db: Session):
+    if not db.query(DBSystemConfig).filter(DBSystemConfig.key == "LOTTERY_COST").first():
+        _set_config(db, "LOTTERY_COST", "5.00")
+    if not db.query(DBSystemConfig).filter(DBSystemConfig.key == "LOTTERY_ENABLED").first():
+        _set_config(db, "LOTTERY_ENABLED", "1")
+
+def execute_lottery_draw(db: Session, nav_total: float) -> dict:
+    cost = float(_get_config(db, "LOTTERY_COST", "5.00"))
+    enabled = _get_config(db, "LOTTERY_ENABLED", "1")
+
+    if enabled != "1":
+        raise HTTPException(status_code=403, detail="博彩系统当前已关闭。")
+    if nav_total < cost:
+        raise HTTPException(status_code=403, detail=f"余额不足！当前净值 ¥{nav_total:.2f}，单次抽奖 ¥{cost:.2f}。")
+
+    prizes = db.query(DBLotteryPrize).filter(DBLotteryPrize.is_active == 1).all()
+    if not prizes:
+        raise HTTPException(status_code=400, detail="奖品池为空，请等待GP配置奖品。")
+
+    total_weight = sum(p.weight for p in prizes)
+    roll = random.randint(1, total_weight)
+    cumulative = 0
+    won_prize = prizes[-1]
+    for p in prizes:
+        cumulative += p.weight
+        if roll <= cumulative:
+            won_prize = p
+            break
+
+    prize_value = 0.0
+    if won_prize.prize_type == "CASH":
+        prize_value = won_prize.value
+    elif won_prize.prize_type == "MULTIPLIER":
+        prize_value = round(cost * won_prize.value, 2)
+
+    db.add(DBTransaction(tx_type="ADJUST_DOWN", amount=cost, description=f"\U0001f3b0 博彩抽奖：{won_prize.name}"))
+
+    if prize_value > 0:
+        db.add(DBTransaction(tx_type="ADJUST_UP", amount=prize_value, description=f"\U0001f3b0 博彩中奖：{won_prize.name}，奖金 ¥{prize_value:.2f}"))
+
+    if won_prize.prize_type == "SPECIAL":
+        result_type = "WIN"
+    elif prize_value > cost * 5:
+        result_type = "JACKPOT"
+    elif prize_value > 0:
+        result_type = "WIN"
+    else:
+        result_type = "LOSE"
+
+    db.add(DBLotteryRecord(cost=cost, prize_name=won_prize.name, prize_value=prize_value, result_type=result_type))
+    db.commit()
+
+    new_nav = calculate_system_nav(db, date.today())["R_total"]
+    if result_type == "JACKPOT":
+        msg = f"\U0001f389 天选之人！！中了 {won_prize.name}，净赚 ¥{prize_value:.2f}！"
+    elif result_type == "WIN":
+        suffix = f"，奖金 ¥{prize_value:.2f}！" if prize_value > 0 else "！"
+        msg = f"\U0001f38a 恭喜！中奖 {won_prize.name}{suffix}"
+    else:
+        msg = f"\U0001f4a8 {won_prize.name}，下次好运！"
+    return {
+        "status": "success", "cost": cost, "prize_name": won_prize.name, "prize_icon": won_prize.icon,
+        "prize_value": prize_value, "result_type": result_type, "roll": roll, "total_weight": total_weight,
+        "new_nav": new_nav, "message": msg
+    }
+# ==========================================
 class VerifyReq(BaseModel): pin: str
 
 @app.post("/api/v1/lp/verify")
@@ -540,6 +664,39 @@ def lp_get_my_requests(db: Session = Depends(get_db)):
     # 3. 把打包好的漂亮盒子送给前端
     return req_list
 
+# 🎰 博彩：LP 端点
+
+@app.get("/api/v1/lp/lottery_status")
+def lp_lottery_status(db: Session = Depends(get_db)):
+    _ensure_default_config(db)
+    _ensure_default_prizes(db)
+    cost = float(_get_config(db, "LOTTERY_COST", "5.00"))
+    enabled = _get_config(db, "LOTTERY_ENABLED", "1") == "1"
+    nav = calculate_system_nav(db, date.today())["R_total"]
+    prizes = db.query(DBLotteryPrize).filter(DBLotteryPrize.is_active == 1).all()
+    records = db.query(DBLotteryRecord).order_by(desc(DBLotteryRecord.id)).limit(10).all()
+    return {
+        "enabled": enabled,
+        "cost": cost,
+        "current_nav": nav,
+        "can_play": enabled and nav >= cost,
+        "prizes": [{"id": p.id, "name": p.name, "icon": p.icon, "weight": p.weight, "prize_type": p.prize_type} for p in prizes],
+        "recent_records": [{"id": r.id, "draw_time": r.draw_time.strftime("%H:%M:%S") if r.draw_time else "", "cost": r.cost, "prize_name": r.prize_name, "prize_value": r.prize_value, "result_type": r.result_type} for r in records]
+    }
+
+@app.post("/api/v1/lp/lottery_draw")
+def lp_lottery_draw(db: Session = Depends(get_db)):
+    _ensure_default_config(db)
+    _ensure_default_prizes(db)
+    nav = calculate_system_nav(db, date.today())["R_total"]
+    result = execute_lottery_draw(db, nav)
+    return result
+
+@app.get("/api/v1/lp/lottery_history")
+def lp_lottery_history(db: Session = Depends(get_db)):
+    records = db.query(DBLotteryRecord).order_by(desc(DBLotteryRecord.id)).limit(30).all()
+    return [{"id": r.id, "draw_time": r.draw_time.strftime("%Y-%m-%d %H:%M:%S") if r.draw_time else "", "cost": r.cost, "prize_name": r.prize_name, "prize_value": r.prize_value, "result_type": r.result_type} for r in records]
+
 @app.post("/api/v1/gp/messages/{msg_id}/reply")
 def reply_message(msg_id: int, reply: str = Form(...), db: Session = Depends(get_db), _: bool = Depends(require_gp_auth)):
     msg = db.query(DBMessage).filter(DBMessage.id == msg_id).first()
@@ -639,6 +796,110 @@ def gp_update_allocation(asset_name: str = Form(...), amount: float = Form(...),
     else: db.add(DBAssetAllocation(asset_name=asset_name, allocated_amount=amount))
     db.commit()
     return {"status": "success", "message": f"资产配置已更新: {asset_name} -> ¥{amount}"}
+
+# ── 博彩：GP 控制端点 ──────────────────────
+
+@app.get("/api/v1/gp/lottery_config")
+def gp_lottery_config(db: Session = Depends(get_db), _: bool = Depends(require_gp_auth)):
+    """GP 查看博彩完整配置"""
+    _ensure_default_config(db)
+    _ensure_default_prizes(db)
+    prizes = db.query(DBLotteryPrize).order_by(DBLotteryPrize.id).all()
+    return {
+        "cost": float(_get_config(db, "LOTTERY_COST", "5.00")),
+        "enabled": _get_config(db, "LOTTERY_ENABLED", "1") == "1",
+        "prizes": [{"id": p.id, "name": p.name, "prize_type": p.prize_type, "value": p.value, "weight": p.weight, "is_active": bool(p.is_active), "icon": p.icon} for p in prizes]
+    }
+
+@app.post("/api/v1/gp/lottery_config")
+def gp_lottery_config_update(
+    cost: float = Form(None),
+    enabled: int = Form(None),
+    prize_id: int = Form(None),
+    action: str = Form(None),  # add / edit / delete / toggle
+    prize_name: str = Form(None),
+    prize_type: str = Form(None),
+    prize_value: float = Form(None),
+    prize_weight: int = Form(None),
+    prize_icon: str = Form(None),
+    db: Session = Depends(get_db),
+    _: bool = Depends(require_gp_auth)
+):
+    """GP 管理博彩配置：更新成本/开关/奖品"""
+    _ensure_default_config(db)
+    _ensure_default_prizes(db)
+
+    # 更新系统参数
+    if cost is not None and cost > 0:
+        _set_config(db, "LOTTERY_COST", str(round(cost, 2)))
+    if enabled is not None:
+        _set_config(db, "LOTTERY_ENABLED", "1" if enabled else "0")
+
+    # 奖品管理
+    if action == "add" and prize_name and prize_type:
+        db.add(DBLotteryPrize(
+            name=prize_name, prize_type=prize_type, value=prize_value or 0.0,
+            weight=prize_weight or 10, icon=prize_icon or "🎁"
+        ))
+        db.commit()
+        return {"status": "success", "message": f"奖品 [{prize_name}] 已添加"}
+
+    if action == "delete" and prize_id:
+        p = db.query(DBLotteryPrize).filter(DBLotteryPrize.id == prize_id).first()
+        if p:
+            db.delete(p)
+            db.commit()
+            return {"status": "success", "message": f"奖品 [{p.name}] 已删除"}
+        raise HTTPException(status_code=404, detail="奖品不存在")
+
+    if action == "toggle" and prize_id is not None:
+        p = db.query(DBLotteryPrize).filter(DBLotteryPrize.id == prize_id).first()
+        if p:
+            p.is_active = 0 if p.is_active else 1
+            db.commit()
+            return {"status": "success", "message": f"奖品 [{p.name}] 已{'启用' if p.is_active else '停用'}"}
+        raise HTTPException(status_code=404, detail="奖品不存在")
+
+    if action == "edit" and prize_id:
+        p = db.query(DBLotteryPrize).filter(DBLotteryPrize.id == prize_id).first()
+        if p:
+            if prize_name is not None: p.name = prize_name
+            if prize_type is not None: p.prize_type = prize_type
+            if prize_value is not None: p.value = prize_value
+            if prize_weight is not None: p.weight = prize_weight
+            if prize_icon is not None: p.icon = prize_icon
+            db.commit()
+            return {"status": "success", "message": f"奖品 [{p.name}] 已更新"}
+        raise HTTPException(status_code=404, detail="奖品不存在")
+
+    return {"status": "success", "message": "配置已更新"}
+
+@app.get("/api/v1/gp/lottery_stats")
+def gp_lottery_stats(db: Session = Depends(get_db), _: bool = Depends(require_gp_auth)):
+    """GP 查看博彩统计数据"""
+    records = db.query(DBLotteryRecord).all()
+    total = len(records)
+    total_cost = sum(r.cost for r in records)
+    total_payout = sum(r.prize_value for r in records)
+    wins = len([r for r in records if r.result_type == "WIN"])
+    jackpots = len([r for r in records if r.result_type == "JACKPOT"])
+    loses = len([r for r in records if r.result_type == "LOSE"])
+    return {
+        "total_draws": total,
+        "total_cost": round(total_cost, 2),
+        "total_payout": round(total_payout, 2),
+        "net_profit": round(total_cost - total_payout, 2),
+        "profit_rate": round((total_cost - total_payout) / total_cost * 100, 1) if total_cost > 0 else 0,
+        "wins": wins, "jackpots": jackpots, "loses": loses,
+        "recent": [{"id": r.id, "draw_time": r.draw_time.strftime("%m-%d %H:%M") if r.draw_time else "", "cost": r.cost, "prize_name": r.prize_name, "prize_value": r.prize_value, "result_type": r.result_type} for r in records[-10:]]
+    }
+
+@app.post("/api/v1/gp/lottery_reset")
+def gp_lottery_reset(db: Session = Depends(get_db), _: bool = Depends(require_gp_auth)):
+    """GP 清空抽奖记录（保留配置和奖品）"""
+    db.query(DBLotteryRecord).delete()
+    db.commit()
+    return {"status": "success", "message": "抽奖记录已清空"}
 
 
 # ==========================================
