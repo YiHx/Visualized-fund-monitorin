@@ -50,9 +50,62 @@
     <title>家庭高净值资产 | 监控台</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <style>.neon-text { text-shadow: 0 0 10px rgba(52, 211, 153, 0.5); } body { background-color: #0f172a; color: #f8fafc; }</style>
+    <style>.neon-text { text-shadow: 0 0 10px rgba(52, 211, 153, 0.5); } body { background-color: #0f172a; color: #f8fafc; }
+/* 🧭 导航菜单 */
+.nav-toggle { position:fixed; top:12px; left:12px; z-index:9000; width:36px;height:36px; background:rgba(15,23,42,0.95); border:1px solid #334155; border-radius:8px; color:#e2e8f0; font-size:18px; cursor:pointer; display:flex;align-items:center;justify-content:center; transition:all 0.2s; }
+.nav-toggle:hover { border-color:#34d399; color:#34d399; box-shadow:0 0 12px rgba(52,211,153,0.2); }
+.nav-overlay { position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9099;opacity:0;pointer-events:none;transition:opacity 0.25s; }
+.nav-overlay.open { opacity:1;pointer-events:auto; }
+.nav-sidebar { position:fixed;top:0;left:-280px;width:260px;height:100vh;background:rgba(15,23,42,0.98);border-right:1px solid #1e293b;z-index:9100;padding:16px 0;overflow-y:auto;transition:left 0.3s cubic-bezier(0.4,0,0.2,1); }
+.nav-sidebar.open { left:0; }
+.nav-header { display:flex;justify-content:space-between;align-items:center;padding:0 16px 12px;border-bottom:1px solid #1e293b;margin-bottom:8px; }
+.nav-sections { padding:0 8px; }
+.nav-item { display:block;padding:10px 14px;color:#cbd5e1;font-size:14px;border-radius:6px;cursor:pointer;transition:all 0.15s;text-decoration:none; }
+.nav-item:hover { background:rgba(52,211,153,0.1);color:#34d399; }
+/* ⚡ 底部快捷栏 */
+.quick-bar { position:fixed;bottom:12px;left:50%;transform:translateX(-50%);display:flex;gap:8px;background:rgba(15,23,42,0.95);border:1px solid #334155;border-radius:28px;padding:6px 12px;z-index:8000; }
+.quick-bar button { width:38px;height:38px;border-radius:50%;border:none;background:rgba(30,41,59,0.8);color:#e2e8f0;font-size:18px;cursor:pointer;transition:all 0.2s;display:flex;align-items:center;justify-content:center; }
+.quick-bar button:hover { background:#34d399; color:#0f172a; transform:scale(1.15); }
+.nav-badge { display:inline-block;background:#34d399;color:#0f172a;font-size:10px;padding:1px 6px;border-radius:10px;margin-left:4px;font-weight:bold; }
+</style>
 </head>
 <body class="p-4 md:p-8 font-mono relative">
+<!-- 🧭 侧边导航菜单 -->
+<div id="nav-overlay" class="nav-overlay" @click="closeNav"></div>
+<div id="nav-sidebar" class="nav-sidebar">
+    <div class="nav-header">
+        <span class="text-lg font-bold text-emerald-400 tracking-wider">📋 监控台导航</span>
+        <button @click="closeNav" class="text-gray-400 hover:text-white text-xl transition">✕</button>
+    </div>
+    <div class="nav-sections">
+        <a @click="scrollToSection('nav-hero'); closeNav()" class="nav-item">💰 NAV 总览</a>
+        <a @click="scrollToSection('nav-assets'); closeNav()" class="nav-item">🏦 资产穿透</a>
+        <a v-if="isAuthenticated" @click="scrollToSection('nav-limit'); closeNav()" class="nav-item">📊 提款配额</a>
+        <a v-if="isAuthenticated" @click="scrollToSection('nav-quarterly'); closeNav()" class="nav-item">🔔 季度派息</a>
+        <a v-if="isAuthenticated" @click="scrollToSection('nav-withdraw'); closeNav()" class="nav-item">💳 提款 & 红利</a>
+        <a v-if="isAuthenticated" @click="scrollToSection('nav-lottery'); closeNav()" class="nav-item">🎰 抽奖大厅</a>
+        <a v-if="isAuthenticated" @click="scrollToSection('nav-messages'); closeNav()" class="nav-item">💬 留言板</a>
+        <div class="border-t border-gray-700 my-2 pt-2">
+            <a @click="scrollToSection('nav-call'); closeNav()" class="nav-item text-blue-400">🎥 视频通话</a>
+            <a @click="openNav('/admin')" class="nav-item text-yellow-400">👑 甲方后台</a>
+        </div>
+        <div class="mt-3 px-3 text-xs text-gray-600">
+            <div>🏆 成就: {{ [...new Set(JSON.parse(localStorage.getItem('lp_badges')||'[]'))].length }} 个</div>
+            <div>🎯 抽奖: {{ drawCount }} 次</div>
+            <div>🔥 连抽: {{ drawStreak }} 天</div>
+        </div>
+    </div>
+</div>
+<!-- 🔲 菜单按钮 -->
+<button id="nav-toggle" class="nav-toggle" @click="toggleNav" title="菜单">☰</button>
+<!-- ⚡ 底部快捷操作栏 -->
+<div v-if="isAuthenticated" class="quick-bar">
+    <button @click="scrollToSection('nav-lottery')" title="抽奖">🎰</button>
+    <button @click="scrollToSection('nav-messages')" title="留言">💬</button>
+    <button @click="scrollToSection('nav-withdraw')" title="提款">💳</button>
+    <button @click="scrollToSection('nav-call')" title="通话">🎥</button>
+    <button @click="openNav('/admin')" title="后台">👑</button>
+</div>
 <!-- 光标拖尾容器 -->
 <div id="sparkle-container" style="position:fixed;inset:0;pointer-events:none;z-index:9999;"></div>
 
@@ -97,6 +150,7 @@
                 🔒 乙方身份验证
             </button>
             <div v-else class="flex items-center space-x-4">
+            <span id="nav-call"></span>
                 <button @click="initiateCall" class="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-2 px-4 rounded transition shadow-lg">
                     🎥 发起通话
                 </button>
@@ -157,6 +211,7 @@
 
     <div class="bg-gray-800 p-8 rounded-lg border border-gray-700 shadow-lg text-center relative overflow-hidden transition-all">
         <div class="absolute top-0 left-1/2 transform -translate-x-1/2 w-full h-1 bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.8)]"></div>
+        <div id="nav-hero"></div>
         <h2 class="text-gray-400 text-sm mb-4">底层资产理论应得总值 (R_total)</h2>
         <div class="text-5xl md:text-6xl font-bold text-emerald-400 neon-text tracking-wider transition-all duration-500 cursor-pointer select-none" @click="clickNav" title="点我有惊喜">{{ navDisplay || '0.00' }}</div>
         
@@ -172,6 +227,7 @@
 
     <div class="bg-gray-800 p-6 rounded-lg border-l-4 border-yellow-500 border-t border-b border-r border-gray-700 shadow-lg">
         <div class="flex items-center mb-4">
+            <div id="nav-assets"></div>
             <h3 class="text-yellow-500 text-sm font-bold tracking-widest uppercase">底层资产穿透报告 (资金真实去向)</h3>
             <span class="ml-2 text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded">PUBLIC VIEW</span>
         </div>
@@ -213,6 +269,7 @@
 
         <div class="bg-gray-800 p-4 rounded-lg border border-gray-700">
             <div class="flex justify-between text-sm mb-2">
+            <div id="nav-limit"></div>
                 <span class="text-gray-400">本月动态配额: ¥{{ limitStatus.monthly_limit }}</span>
                 <span :class="limitStatus.remaining < 20 ? 'text-red-400 font-bold' : 'text-emerald-400'">本月剩余可提: ¥{{ limitStatus.remaining }}</span>
             </div>
@@ -223,6 +280,7 @@
 
         <div v-if="quarterlyInfo.status === 'ACTIVE'" class="bg-blue-900/40 border border-blue-500 p-5 rounded-lg flex flex-col md:flex-row justify-between items-center shadow-[0_0_15px_rgba(59,130,246,0.2)] animate-pulse-slow">
             <div class="mb-4 md:mb-0">
+            <div id="nav-quarterly"></div>
                 <h3 class="text-blue-400 font-bold text-lg mb-1">🔔 限时！季度流动性派发</h3>
                 <p class="text-sm text-yellow-400 mt-2 font-bold font-mono">⏳ 剩余时间: {{ quarterlyInfo.hours_left }} 小时</p>
             </div>
@@ -231,6 +289,7 @@
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div class="border border-gray-700 rounded-lg p-6 bg-gray-900 shadow-lg">
+            <div id="nav-withdraw"></div>
                 <h3 class="text-lg text-red-400 font-bold mb-4">限制性赎回 (提款)</h3>
                 <form @submit.prevent="submitWithdrawal" class="space-y-4">
                     <input v-model="form.amount" type="number" step="0.01" class="w-full bg-black border border-gray-700 rounded p-2 text-white" placeholder="提款金额" required>
@@ -399,6 +458,7 @@
             </div>
         </div>
         <div class="border border-gray-700 rounded-lg p-6 bg-gray-900 shadow-inner">
+            <div id="nav-messages"></div>
             <h3 class="text-lg text-yellow-500 font-bold mb-4 flex items-center">💬 留言板（支持图片/视频）</h3>
             <form @submit.prevent="submitMessage" class="mb-6 space-y-3">
                 <div>
@@ -702,6 +762,16 @@
     createApp({
         setup() {
             const API_BASE = '/api/v1';
+
+            // 🧭 导航方法
+            const showNav = ref(false);
+            const toggleNav = () => { showNav.value = !showNav.value; document.getElementById('nav-overlay').classList.toggle('open', showNav.value); document.getElementById('nav-sidebar').classList.toggle('open', showNav.value); };
+            const closeNav = () => { showNav.value = false; document.getElementById('nav-overlay').classList.remove('open'); document.getElementById('nav-sidebar').classList.remove('open'); };
+            const openNav = (url) => window.open(url, '_blank');
+            const scrollToSection = (id) => {
+                const el = document.getElementById(id);
+                if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); el.classList.add('streak-glow'); setTimeout(() => el.classList.remove('streak-glow'), 1200); }
+            };
             const navData = ref({});
             const navDisplay = ref('0.00');  // 动画化 NAV 显示值
             let navAnimFrame = null;
@@ -1466,6 +1536,7 @@
             return { 
                 navData, allocations, allocationMeta, limitStatus, quarterlyInfo, notices,
                 navDisplay, navMood, clickNav, isAuthenticated, showAuthModal, pinInput, verifyPin, closeAuthModal, logout, initiateCall,
+                showNav, toggleNav, closeNav, openNav, scrollToSection,
                 showEncourage, encourageText, nextEncourage, fortuneText, showFortune, drawFortune,
                 luckyActive, drawCount,
                 showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall,
