@@ -180,8 +180,8 @@ class DBWebAuthnCred(Base):
 
 
 
-# ── 白客CTF系统模型 ────────────────────────────
-class DBCTFFlag(Base):
+# ── 玩家ADVENTURE系统模型 ────────────────────────────
+class DBADVENTUREFlag(Base):
     __tablename__ = "ctf_flags"
     id = Column(Integer, primary_key=True, index=True)
     flag_key = Column(String, unique=True, nullable=False)
@@ -192,7 +192,7 @@ class DBCTFFlag(Base):
     found_by = Column(String, nullable=True)
     found_at = Column(DateTime, nullable=True)
 
-class DBCTFHint(Base):
+class DBADVENTUREHint(Base):
     __tablename__ = "ctf_hints"
     id = Column(Integer, primary_key=True, index=True)
     flag_key = Column(String, nullable=False)
@@ -243,14 +243,14 @@ ensure_db_schema()
 
 app = FastAPI(title="家庭高净值资产控制台")
 
-# 🕵️ CTF H# 🕵️ CTF Headers — ASCII only to avoid Unicode errors
+# 🕵️ ADVENTURE H# 🕵️ ADVENTURE Headers — ASCII only to avoid Unicode errors
 @app.middleware("http")
 async def ctf_header_middleware(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Hint"] = "Try /robots.txt and view page source!"
-    response.headers["X-CTF-Challenge"] = "Find all 11 FLAG{...} tokens hidden in this site!"
+    response.headers["X-ADVENTURE-Challenge"] = "Find all 11 GAME{...} tokens hidden in this site!"
     response.headers["X-Powered-By"] = "Rin-Tohsaka-Jewel-Magecraft-v2.5"
-    response.headers["X-Flag-3"] = "FLAG{http_headers_tell_all}"
+    response.headers["X-Flag-3"] = "GAME{http_headers_tell_all}"
     response.headers["X-Next-Step"] = "Check Cookies and source code for more flags"
     return response
 
@@ -548,11 +548,11 @@ class VerifyReq(BaseModel): pin: str
 
 @app.post("/api/v1/lp/verify")
 def verify_lp(req: VerifyReq):
-    # 🕵️ CTF: SQL injection detection
+    # 🕵️ ADVENTURE: SQL injection detection
     pin = req.pin.strip()
     sqli = ["' OR '1'='1", "' OR 1=1", '" OR "1"="1', "OR 1=1", "'--", "admin'--"]
     if any(p.lower() in pin.lower() for p in sqli):
-        return {"status": "ctf_detected", "message": "🕵️ SQL注入检测！思路正确！Flag: FLAG{sql_injection_is_still_a_thing}", "flag": "FLAG{sql_injection_is_still_a_thing}"}
+        return {"status": "ctf_detected", "message": "🕵️ SQL注入检测！思路正确！Flag: GAME{sql_injection_is_still_a_thing}", "flag": "GAME{sql_injection_is_still_a_thing}"}
     if pin == "0103": return {"status": "success"}
     raise HTTPException(status_code=403, detail="授权码错误。")
 
@@ -1327,325 +1327,386 @@ def go_shortcut(path: str, db: Session = Depends(get_db)):
 
 
 # ==========================================
-# 🕵️ 白客训练场 CTF系统
+# 🕵️ 🎮 闯关游戏系统
 # ==========================================
 
 import random as _random
 
 def _ensure_ctf_seeds(db: Session):
-    """Seed 100 CTF challenges"""
-    if db.query(DBCTFFlag).count() >= 90:
+    """种子闯关游戏题目 — 100关趣味挑战"""
+    if db.query(DBADVENTUREFlag).count() >= 90:
         return
-    db.query(DBCTFFlag).delete()
-    db.query(DBCTFHint).delete()
+    db.query(DBADVENTUREFlag).delete()
+    db.query(DBADVENTUREHint).delete()
     flags = [
-        DBCTFFlag(flag_key='FLAG{welcome_to_ctf}', title='👋 Welcome to CTF!', description='访问 /ctf 页面看看', points=10, difficulty="tutorial"),
-        DBCTFFlag(flag_key='FLAG{view_source_is_step_one}', title='📜 查看源代码', description='右键→查看网页源代码，永远是你最好的朋友', points=10, difficulty="tutorial"),
-        DBCTFFlag(flag_key='FLAG{http_headers_tell_all}', title='📨 HTTP响应头藏宝', description='F12→Network→刷新→点第一个请求→Response Headers', points=10, difficulty="tutorial"),
-        DBCTFFlag(flag_key='FLAG{robots_are_not_your_enemy}', title='🤖 robots.txt 的秘密', description='访问 /robots.txt — 搜索引擎不想让你看的东西', points=10, difficulty="tutorial"),
-        DBCTFFlag(flag_key='FLAG{source_code_is_your_friend}', title='🔍 HTML注释挖掘', description='查看网页源代码，找HTML注释 <!-- ... -->', points=10, difficulty="tutorial"),
-        DBCTFFlag(flag_key='FLAG{console_is_your_best_friend}', title='💻 开发者控制台', description='F12→Console标签，看看log消息', points=10, difficulty="tutorial"),
-        DBCTFFlag(flag_key='FLAG{cookies_are_delicious}', title='🍪 Cookie里藏了什么', description='F12→Application→Cookies→yhymoney.asia', points=10, difficulty="tutorial"),
-        DBCTFFlag(flag_key='FLAG{meta_tags_hide_secrets}', title='🏷️ Meta标签探秘', description='查看页面 <head> 里的 <meta> 标签', points=10, difficulty="tutorial"),
-        DBCTFFlag(flag_key='FLAG{f12_is_your_gateway}', title='🚪 F12是万能钥匙', description='Developer Tools是你进入渗透世界的大门', points=10, difficulty="tutorial"),
-        DBCTFFlag(flag_key='FLAG{every_journey_begins_with_curiosity}', title='🌟 好奇心是最好的老师', description='你已经完成了入门关卡！继续前进吧！', points=10, difficulty="tutorial"),
-        DBCTFFlag(flag_key='FLAG{base64_is_not_encryption}', title='🔐 Base64不是加密', description='Q29uZ3JhdHVsYXRpb25zISBZb3UgZm91bmQgaXQh', points=15, difficulty="easy"),
-        DBCTFFlag(flag_key='FLAG{rot13_is_the_original_crypto}', title='🔄 ROT13 — 最原始的加密', description='SYNT{sbg13_vf_gur_bevtvany_pelcgb}', points=15, difficulty="easy"),
-        DBCTFFlag(flag_key='FLAG{hex_is_everywhere}', title='🔢 十六进制解码', description='464c41477b6865785f69735f657665727977686572657d', points=15, difficulty="easy"),
-        DBCTFFlag(flag_key='FLAG{morse_code_is_classic}', title='📡 摩尔斯电码', description='..-. .-.. .- --. -.--. -- --- .-. ... . ..--.- -.-. --- -.. . ..--.- .. ... ..--.- -.-. .-.. .- ... ... .. -.-. -.--.-', points=15, difficulty="easy"),
-        DBCTFFlag(flag_key='FLAG{url_encoding_hides_things}', title='🔗 URL编码解码', description='%46%4C%41%47%7B%75%72%6C%5F%65%6E%63%6F%64%69%6E%67%5F%68%69%64%65%73%5F%74%68%69%6E%67%73%7D', points=15, difficulty="easy"),
-        DBCTFFlag(flag_key='FLAG{binary_is_the_native_tongue}', title='0️⃣1️⃣ 二进制转换', description='01000110 01001100 01000001 01000111 01111011 01100010 01101001 01101110 01100001 01110010 01111001 01011111 01101001 01110011 01011111 01110100 01101000 01100101 01011111 01101110 01100001 01110100 01101001 01110110 01100101 01011111 01110100 01101111 01101110 01100111 01110101 01100101 01111101', points=15, difficulty="easy"),
-        DBCTFFlag(flag_key='FLAG{hidden_in_plain_sight}', title='👁️ 隐藏的颜色', description='查看CSS中的注释或隐藏文字（color: transparent / font-size: 0）', points=15, difficulty="easy"),
-        DBCTFFlag(flag_key='FLAG{http_methods_matter}', title='📮 HTTP方法大冒险', description='试试用 POST/DELETE/PUT/PATCH 访问 /api/v1/ctf/status', points=15, difficulty="easy"),
-        DBCTFFlag(flag_key='FLAG{comment_out_the_truth}', title='💬 JS注释里的秘密', description='查看页面JavaScript源码，找 // 或 /* */ 注释', points=15, difficulty="easy"),
-        DBCTFFlag(flag_key='FLAG{error_pages_tell_stories}', title='⚠️ 404页面也有料', description='访问一个不存在的页面，看404页面说了什么', points=15, difficulty="easy"),
-        DBCTFFlag(flag_key='FLAG{backup_files_are_dangerous}', title='📦 备份文件泄露', description='访问 /backup.zip 或者 /backup.tar.gz', points=15, difficulty="easy"),
-        DBCTFFlag(flag_key='FLAG{hidden_api_endpoints}', title='🗺️ API端点探测', description='访问 /docs 或 /openapi.json 看全部接口', points=15, difficulty="easy"),
-        DBCTFFlag(flag_key='FLAG{jwt_tokens_are_not_magic}', title='🎫 JWT Token解析', description='抓取任意请求的 X-GP-Token，去 jwt.io 看看', points=15, difficulty="easy"),
-        DBCTFFlag(flag_key='FLAG{referer_header_leaks}', title='↩️ Referer头的秘密', description='检查HTTP请求的 Referer 头', points=15, difficulty="easy"),
-        DBCTFFlag(flag_key='FLAG{user_agent_can_lie}', title='🤖 User-Agent伪装', description="试试用 curl -A 'Googlebot' 访问网站", points=15, difficulty="easy"),
-        DBCTFFlag(flag_key='FLAG{ssti_smells_fishy}', title='🐟 SSTI探测', description='在URL参数中试试 {{7*7}}', points=15, difficulty="easy"),
-        DBCTFFlag(flag_key='FLAG{directory_listing_forbidden}', title='📂 目录遍历尝试', description='访问 /uploads/ /static/ /assets/ /images/', points=15, difficulty="easy"),
-        DBCTFFlag(flag_key='FLAG{xss_is_everywhere}', title='💉 XSS基础', description='在留言板输入 <script>alert(1)</script>', points=15, difficulty="easy"),
-        DBCTFFlag(flag_key='FLAG{csrf_token_missing}', title='🛡️ CSRF Token缺失', description='检查POST请求是否缺乏CSRF保护', points=15, difficulty="easy"),
-        DBCTFFlag(flag_key='FLAG{localstorage_is_not_safe}', title='💾 LocalStorage的秘密', description='F12→Application→Local Storage→yhymoney.asia', points=15, difficulty="easy"),
-        DBCTFFlag(flag_key='FLAG{md5_is_broken_use_sha256}', title='🔓 MD5已被破解', description="md5('flag') = ? 研究一下哈希碰撞", points=20, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{xor_with_single_byte}', title='🔮 单字节XOR解密', description='XOR encrypted: 2c0700170b1316591f131f561c0a1c0f561918131e031f570e', points=20, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{vigenere_is_classic_crypto}', title='📜 维吉尼亚密码', description="Vigenere with key 'RIN': WFNX{iphertb_fv_phnfprn_wnnqk}", points=20, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{sql_injection_is_still_a_thing}', title='💉 SQL注入入门', description="在PIN输入框输入 ' OR '1'='1", points=20, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{nosql_injection_exists_too}', title='🗄️ NoSQL注入', description='试试在请求中传入 $ne (not equal) 操作符', points=20, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{command_injection_backticks}', title='⌨️ 命令注入', description='试试在输入框输入 ; ls 或 `whoami`', points=20, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{idor_is_simple_but_deadly}', title='🆔 IDOR — 不安全的直接对象引用', description='试试修改API请求的ID参数：/api/v1/gp/process_request/1 → /2', points=20, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{rate_limiting_is_absent}', title='⏱️ 速率限制缺失', description='连续发送100次相同请求，看是否被限流', points=25, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{path_traversal_dot_dot_slash}', title='📁 路径穿越', description='试试 ../../etc/passwd 之类的payload', points=20, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{xxe_is_still_relevant}', title='📄 XXE — XML外部实体注入', description='提交XML数据试试外部实体引用', points=25, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{ssrf_is_the_sleeper_threat}', title='🌐 SSRF — 服务端请求伪造', description='试试让服务器访问内部地址 127.0.0.1', points=25, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{deserialization_is_dangerous}', title='🧩 反序列化攻击', description='Python pickle反序列化可以执行任意代码', points=25, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{jwt_none_algorithm_attack}', title='🎫 JWT None算法攻击', description='把JWT的alg改成none会怎样？', points=25, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{timing_attack_is_subtle}', title='⏳ 时序攻击基础', description='比较两个请求的响应时间差异', points=25, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{steganography_in_images}', title='🖼️ 图片隐写术', description='检查网站上的图片，看有没有藏东西', points=20, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{strings_command_is_powerful}', title='🔤 strings命令的力量', description='用 strings 命令检查二进制文件', points=20, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{metafile_data_leaks}', title='📸 元数据泄露', description='检查上传图片的EXIF数据', points=20, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{git_exposed_dot_git}', title='📂 .git泄露', description='访问 /.git/HEAD 或者 /.git/config', points=25, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{env_file_leaked}', title='🟢 .env文件泄露', description='访问 /.env 看环境变量', points=25, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{dockerfile_tells_the_stack}', title='🐳 Dockerfile泄露', description='访问 /Dockerfile 看部署配置', points=20, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{cors_misconfiguration}', title='🌍 CORS配置不当', description='检查CORS头是否过于宽松', points=20, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{clickjacking_missing_xframe}', title='🖼️ Clickjacking漏洞', description='检查是否缺少 X-Frame-Options 头', points=20, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{csp_is_not_configured}', title='🛡️ CSP未配置', description='检查 Content-Security-Policy 头是否存在', points=20, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{hsts_missing}', title='🔒 HSTS未启用', description='检查 Strict-Transport-Security 头', points=20, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{caesar_cipher_is_ancient}', title='🏛️ 凯撒密码', description='WKHQJ_BRFHVDU_BLSKHU_CL_DQFLHQW', points=20, difficulty="medium"),
-        DBCTFFlag(flag_key='FLAG{aes_ecb_penguin}', title='🐧 AES ECB模式的企鹅', description='ECB模式加密同一明文产生同一密文—你能发现吗？', points=30, difficulty="hard"),
-        DBCTFFlag(flag_key='FLAG{padding_oracle_is_classic}', title='🔮 Padding Oracle攻击', description='试试修改加密数据的padding', points=35, difficulty="hard"),
-        DBCTFFlag(flag_key='FLAG{length_extension_attack}', title='📏 长度扩展攻击', description='SHA256(key+message)的可扩展性', points=35, difficulty="hard"),
-        DBCTFFlag(flag_key='FLAG{rsa_wiener_attack}', title='🔑 RSA Wiener攻击', description='当d很小的时候，RSA可能被破解', points=35, difficulty="hard"),
-        DBCTFFlag(flag_key='FLAG{bleichenbacher_oracle}', title='📨 Bleichenbacher Oracle', description='PKCS#1 v1.5 padding的RSA可能被攻破', points=35, difficulty="hard"),
-        DBCTFFlag(flag_key='FLAG{buffer_overflow_in_the_wild}', title='💥 缓冲区溢出概念', description='理解栈溢出如何覆盖返回地址', points=30, difficulty="hard"),
-        DBCTFFlag(flag_key='FLAG{format_string_is_powerful}', title='📝 格式化字符串攻击', description='%x %x %x %x 可以泄露栈信息', points=30, difficulty="hard"),
-        DBCTFFlag(flag_key='FLAG{ret2libc_is_a_technique}', title='🔗 Return-to-libc攻击', description='绕过NX bit的技术', points=35, difficulty="hard"),
-        DBCTFFlag(flag_key='FLAG{rop_chains_are_art}', title='⛓️ ROP链——二进制利用的艺术', description='Return-Oriented Programming', points=35, difficulty="hard"),
-        DBCTFFlag(flag_key='FLAG{heap_exploitation_basics}', title='🗑️ 堆利用基础', description='Use-After-Free, Double-Free 等', points=35, difficulty="hard"),
-        DBCTFFlag(flag_key='FLAG{race_condition_toctou}', title='🏃 TOCTOU竞态条件', description='Time-of-Check vs Time-of-Use', points=30, difficulty="hard"),
-        DBCTFFlag(flag_key='FLAG{dns_rebinding_attack}', title='🌐 DNS Rebinding攻击', description='让浏览器攻击内网设备', points=35, difficulty="hard"),
-        DBCTFFlag(flag_key='FLAG{prototype_pollution_in_js}', title='🧬 JS原型污染', description='__proto__ 和 constructor.prototype', points=30, difficulty="hard"),
-        DBCTFFlag(flag_key='FLAG{oauth2_misconfiguration}', title='🔐 OAuth2配置错误', description='redirect_uri验证不严导致token泄露', points=35, difficulty="hard"),
-        DBCTFFlag(flag_key='FLAG{saml_bypass_via_comment}', title='📋 SAML注入', description='SAML断言中的XML注释可以绕过验证', points=35, difficulty="hard"),
-        DBCTFFlag(flag_key='FLAG{graphql_introspection_enabled}', title='🔍 GraphQL Introspection', description='GraphQL自省功能可能泄露Schema', points=30, difficulty="hard"),
-        DBCTFFlag(flag_key='FLAG{http_request_smuggling}', title='🚛 HTTP请求走私', description='利用Content-Length和Transfer-Encoding的不一致', points=35, difficulty="hard"),
-        DBCTFFlag(flag_key='FLAG{websocket_hijacking}', title='🔌 WebSocket劫持', description='缺少origin检查的WebSocket连接', points=30, difficulty="hard"),
-        DBCTFFlag(flag_key='FLAG{subdomain_takeover_potential}', title='🌍 子域名接管', description='查找DNS dangling记录', points=30, difficulty="hard"),
-        DBCTFFlag(flag_key='FLAG{shodan_is_your_eye}', title='🔭 Shodan搜索引擎', description='用Shodan扫描你的服务器暴露了什么', points=30, difficulty="hard"),
-        DBCTFFlag(flag_key='FLAG{zero_day_is_a_mindset}', title='💎 零日漏洞思维', description='理解漏洞发现的方法论', points=40, difficulty="expert"),
-        DBCTFFlag(flag_key='FLAG{fuzzing_finds_bugs}', title='🎯 Fuzzing测试', description='用AFL/libFuzzer对程序进行模糊测试', points=40, difficulty="expert"),
-        DBCTFFlag(flag_key='FLAG{symbolic_execution_is_magic}', title='🔮 符号执行', description='用angr解题的技巧', points=45, difficulty="expert"),
-        DBCTFFlag(flag_key='FLAG{return_oriented_shellcode}', title='💣 ROP到Shellcode', description='完整的ROP链构建', points=45, difficulty="expert"),
-        DBCTFFlag(flag_key='FLAG{kernel_exploitation_101}', title='🐧 内核漏洞利用入门', description='理解内核态vs用户态', points=45, difficulty="expert"),
-        DBCTFFlag(flag_key='FLAG{side_channel_is_stealthy}', title='👻 侧信道攻击', description='通过功耗/电磁/时间泄露信息', points=45, difficulty="expert"),
-        DBCTFFlag(flag_key='FLAG{cache_timing_is_real}', title='⚡ 缓存时序攻击', description='Spectre和Meltdown的原理', points=45, difficulty="expert"),
-        DBCTFFlag(flag_key='FLAG{quantum_crypto_is_coming}', title='🔬 后量子密码学', description='Shor算法和格密码', points=45, difficulty="expert"),
-        DBCTFFlag(flag_key='FLAG{blockchain_smart_contract_bugs}', title='⛓️ 智能合约漏洞', description='Reentrancy, Integer Overflow, Flash Loans', points=40, difficulty="expert"),
-        DBCTFFlag(flag_key='FLAG{reverse_engineering_is_an_art}', title='🔧 逆向工程的艺术', description='用Ghidra/IDA分析二进制文件', points=40, difficulty="expert"),
-        DBCTFFlag(flag_key='FLAG{code_audit_is_essential}', title='📖 代码审计方法论', description='学会系统地阅读代码找漏洞', points=40, difficulty="expert"),
-        DBCTFFlag(flag_key='FLAG{threat_modeling_is_proactive}', title='🗺️ 威胁建模', description='STRIDE模型和攻击树', points=40, difficulty="expert"),
-        DBCTFFlag(flag_key='FLAG{red_team_is_the_ultimate_test}', title='🔴 红队攻击模拟', description='完整的渗透测试方法论', points=45, difficulty="expert"),
-        DBCTFFlag(flag_key='FLAG{pwn_college_is_a_thing}', title='🎓 Pwn College', description='pwn.college 是一个超棒的学习平台', points=40, difficulty="expert"),
-        DBCTFFlag(flag_key='FLAG{hackthebox_is_your_playground}', title='📦 HackTheBox', description='HTB是最好的实战训练平台之一', points=40, difficulty="expert"),
-        DBCTFFlag(flag_key='FLAG{you_are_a_real_hacker_now}', title='🏆 真·白客认证', description='集齐90个flag！你已经掌握了Web渗透的全套技能', points=50, difficulty="legendary"),
-        DBCTFFlag(flag_key='FLAG{the_42nd_challenge}', title='🐬 终极答案', description='在页面上输入某个著名的数字...', points=50, difficulty="legendary"),
-        DBCTFFlag(flag_key='FLAG{full_chain_exploitation}', title='⛓️ 全链条利用', description='从信息收集→漏洞发现→利用→提权→持久化', points=50, difficulty="legendary"),
-        DBCTFFlag(flag_key='FLAG{responsible_disclosure_is_key}', title='🤝 负责任的漏洞披露', description='发现漏洞后该怎么做', points=50, difficulty="legendary"),
-        DBCTFFlag(flag_key='FLAG{every_expert_was_once_a_beginner}', title='🌱 不忘初心', description='即使是最厉害的黑客，也曾是个小白', points=50, difficulty="legendary"),
-        DBCTFFlag(flag_key='FLAG{sharing_knowledge_is_the_way}', title='📚 知识分享', description='把你的CTF解题过程写成writeup', points=50, difficulty="legendary"),
-        DBCTFFlag(flag_key='FLAG{white_hat_is_a_lifestyle}', title='🎩 白客是一种生活方式', description='用你的技能让互联网变得更安全', points=50, difficulty="legendary"),
-        DBCTFFlag(flag_key='FLAG{bug_bounty_is_waiting}', title='💰 Bug Bounty在等你', description='HackerOne, Bugcrowd等平台', points=50, difficulty="legendary"),
-        DBCTFFlag(flag_key='FLAG{the_learning_never_stops}', title='📖 学无止境', description='安全领域每天都有新东西', points=50, difficulty="legendary"),
-        DBCTFFlag(flag_key='FLAG{the_final_boss_defeated}', title='👑 最终BOSS — 击败！', description='100/100！你已经完成了全部CTF挑战', points=50, difficulty="legendary"),
+        DBADVENTUREFlag(flag_key='GAME{hello_world}', title='👋 你好世界！', description='在页面上的Flag提交框输入 hello 试试', points=5, difficulty="入门"),
+        DBADVENTUREFlag(flag_key='GAME{found_me_in_source}', title='🔍 源代码里的宝藏', description='右键→查看网页源代码，找一下GAME{...}', points=5, difficulty="入门"),
+        DBADVENTUREFlag(flag_key='GAME{hidden_page_found}', title='📄 隐藏的页面', description='网址后面加上 /secrets', points=5, difficulty="入门"),
+        DBADVENTUREFlag(flag_key='GAME{powered_by_python}', title='🐍 技术栈侦探', description='页面底部写着什么？', points=5, difficulty="入门"),
+        DBADVENTUREFlag(flag_key='GAME{console_rainbow}', title='🌈 彩色控制台', description='F12→Console，找彩色的log消息', points=5, difficulty="入门"),
+        DBADVENTUREFlag(flag_key='GAME{rin_count_7}', title='💎 找凛凛', description='搜索页面上的远坂凛ASCII画，数几个凛字', points=5, difficulty="入门"),
+        DBADVENTUREFlag(flag_key='GAME{bo_cai_button}', title='🎰 找按钮', description='认证登录后，页面上有个紫色大按钮', points=5, difficulty="入门"),
+        DBADVENTUREFlag(flag_key='GAME{yhymoney.asia}', title='🌐 域名侦探', description='看看浏览器地址栏', points=5, difficulty="入门"),
+        DBADVENTUREFlag(flag_key='GAME{bilibili_link_found}', title='📺 B站特工', description='源码里找bilibili.com', points=5, difficulty="入门"),
+        DBADVENTUREFlag(flag_key='GAME{gp_notice_popup}', title='📢 政令公告', description='登录后弹出来的是什么？', points=5, difficulty="入门"),
+        DBADVENTUREFlag(flag_key='GAME{cool}', title='🔐 凯撒密码入门', description='每个字母往后挪一位', points=10, difficulty="初级"),
+        DBADVENTUREFlag(flag_key='GAME{welcome_yongyun}', title='🪞 镜像文字', description='从右往左读', points=10, difficulty="初级"),
+        DBADVENTUREFlag(flag_key='GAME{hello_morse}', title='📡 滴滴答答', description='摩尔斯电码表：G=--. A=.- M=-- E=.', points=10, difficulty="初级"),
+        DBADVENTUREFlag(flag_key='GAME{4}', title='🧮 数学课', description='F12→Console→输入2+2→回车', points=10, difficulty="初级"),
+        DBADVENTUREFlag(flag_key='GAME{over_50_emoji}', title='😀 Emoji统计员', description='页面上的表情符号超过50个吗？', points=10, difficulty="初级"),
+        DBADVENTUREFlag(flag_key='GAME{say_hello_to_gp}', title='💬 打招呼', description="在留言板输入'你好！'并发送", points=10, difficulty="初级"),
+        DBADVENTUREFlag(flag_key='GAME{nav_is_over_1000}', title='💰 找NAV', description='页面中间的绿色大数字是多少？', points=10, difficulty="初级"),
+        DBADVENTUREFlag(flag_key='GAME{nav_click_easter_egg}', title='🐣 连击彩蛋', description='快速点击NAV数字5次', points=10, difficulty="初级"),
+        DBADVENTUREFlag(flag_key='GAME{time_greeting}', title='🌅 早晚问候', description='不同时间访问网站，问候语不同', points=10, difficulty="初级"),
+        DBADVENTUREFlag(flag_key='GAME{42_dolphin}', title='🐬 宇宙的答案', description='直接在页面上按下 4 然后 2', points=10, difficulty="初级"),
+        DBADVENTUREFlag(flag_key='GAME{mobile_version}', title='📱 手机版', description='手机版网站布局不一样哦', points=10, difficulty="初级"),
+        DBADVENTUREFlag(flag_key='GAME{rin_ascii_art}', title='🎨 ASCII艺术家', description='源码最上面有一幅ASCII画', points=10, difficulty="初级"),
+        DBADVENTUREFlag(flag_key='GAME{bilibili_up}', title='💝 我的宝藏UP主', description='在留言板写下你最喜欢的UP主', points=10, difficulty="初级"),
+        DBADVENTUREFlag(flag_key='GAME{github_repo}', title='⭐ 给颗Star', description='源码里找github.com/YiHx', points=10, difficulty="初级"),
+        DBADVENTUREFlag(flag_key='GAME{rin_daisuki}', title='💎 凛ちゃん大好き', description='在Flag提交框输入：凛ちゃん大好き', points=10, difficulty="初级"),
+        DBADVENTUREFlag(flag_key='GAME{https_protocol}', title='🔒 安全上网', description='浏览器地址栏最前面是什么？', points=10, difficulty="初级"),
+        DBADVENTUREFlag(flag_key='GAME{lottery_button_clicked}', title='🎰 摸一下抽奖机', description='点一下抽奖按钮就行', points=10, difficulty="初级"),
+        DBADVENTUREFlag(flag_key='GAME{console_log_master}', title='💻 Console达人', description="F12→Console→输入console.log('找到你了！')", points=10, difficulty="初级"),
+        DBADVENTUREFlag(flag_key='GAME{fate_ubw}', title='⚔️ 动漫侦探', description='打开B站搜这个BV号', points=10, difficulty="初级"),
+        DBADVENTUREFlag(flag_key='GAME{aGVsbG8=}', title='🔐 Base64初体验', description="搜索'base64在线编码'，输入hello", points=10, difficulty="初级"),
+        DBADVENTUREFlag(flag_key='GAME{good}', title='🔐 凯撒+2', description='每个字母往后挪两位', points=15, difficulty="中级"),
+        DBADVENTUREFlag(flag_key='GAME{url_decode}', title='🔗 URL密码', description="搜索'URL解码'，输入这些字符", points=15, difficulty="中级"),
+        DBADVENTUREFlag(flag_key='GAME{8}', title='🐚 斐波那契', description='每个数是前两个数之和', points=15, difficulty="中级"),
+        DBADVENTUREFlag(flag_key='GAME{html_comment_master}', title='📝 注释猎人', description='源码里的 <!-- ... --> 都看看', points=15, difficulty="中级"),
+        DBADVENTUREFlag(flag_key='GAME{cookie_in_devtools}', title='🍪 饼干追踪', description='F12→Application→Cookies', points=15, difficulty="中级"),
+        DBADVENTUREFlag(flag_key='GAME{responsive_design}', title='📱 响应式设计', description='同一个网站在不同设备上不一样', points=15, difficulty="中级"),
+        DBADVENTUREFlag(flag_key='GAME{upload_image}', title='🖼️ 上传照片', description='登录→留言板→选择文件→上传', points=15, difficulty="中级"),
+        DBADVENTUREFlag(flag_key='GAME{icp_number}', title='📋 备案侦探', description='页面最下面有没有备案号？', points=15, difficulty="中级"),
+        DBADVENTUREFlag(flag_key='GAME{55}', title='🧮 高斯求和', description='(首项+末项)×项数÷2', points=15, difficulty="中级"),
+        DBADVENTUREFlag(flag_key='GAME{2026}', title='📅 时间旅行者', description='JavaScript获取当前年份', points=15, difficulty="中级"),
+        DBADVENTUREFlag(flag_key='GAME{net_asset_value}', title='📈 NAV含义', description='Net Asset Value 的缩写', points=15, difficulty="中级"),
+        DBADVENTUREFlag(flag_key='GAME{konami_code_beginner}', title='🎮 游戏秘籍', description='↑↑↓↓←→←→ 是什么？', points=15, difficulty="中级"),
+        DBADVENTUREFlag(flag_key='GAME{daily_streak_3}', title='🔥 连续抽奖', description='连续3天各抽一次奖', points=15, difficulty="中级"),
+        DBADVENTUREFlag(flag_key='GAME{money_emoji_count}', title='💰 数钱', description='Ctrl+F搜索💰，看匹配了多少个', points=15, difficulty="中级"),
+        DBADVENTUREFlag(flag_key='GAME{Hi_binary}', title='0️⃣1️⃣ 二进制入门', description="搜索'二进制转文本'", points=15, difficulty="中级"),
+        DBADVENTUREFlag(flag_key='GAME{general_partner}', title='👑 GP含义', description='私募基金里的概念', points=15, difficulty="中级"),
+        DBADVENTUREFlag(flag_key='GAME{limited_partner}', title='📊 LP含义', description='私募基金里的概念', points=15, difficulty="中级"),
+        DBADVENTUREFlag(flag_key='GAME{html_viewer}', title='🔧 Elements面板', description='用来查看和修改HTML/CSS', points=15, difficulty="中级"),
+        DBADVENTUREFlag(flag_key='GAME{favorite_emoji}', title='😍 最喜欢的Emoji', description='随便写一个页面上的emoji', points=15, difficulty="中级"),
+        DBADVENTUREFlag(flag_key='GAME{user_agent}', title='🌐 浏览器指纹', description='你的浏览器会自我介绍', points=15, difficulty="中级"),
+        DBADVENTUREFlag(flag_key='GAME{47_41_4D_45}', title='🔢 ASCII码入门', description="搜索'ASCII码表'", points=20, difficulty="高级"),
+        DBADVENTUREFlag(flag_key='GAME{open_source_github}', title='📖 开源精神', description='代码公开在GitHub上', points=20, difficulty="高级"),
+        DBADVENTUREFlag(flag_key='GAME{wrong_pin_alert}', title='🚨 错误提示', description='输入错误的PIN看会发生什么', points=20, difficulty="高级"),
+        DBADVENTUREFlag(flag_key='GAME{1.5_percent}', title='📐 门槛利率', description='看看Main.py源代码里的定义', points=20, difficulty="高级"),
+        DBADVENTUREFlag(flag_key='GAME{secure}', title='🔒 HTTPS含义', description='HTTP + Secure = ?', points=20, difficulty="高级"),
+        DBADVENTUREFlag(flag_key='GAME{html_injection}', title='💉 HTML注入', description='在留言框输入<b>测试</b>然后发送', points=20, difficulty="高级"),
+        DBADVENTUREFlag(flag_key='GAME{disallowed_paths}', title='🤖 机器人禁止', description='访问 yhymoney.asia/robots.txt', points=20, difficulty="高级"),
+        DBADVENTUREFlag(flag_key='GAME{christmas_greeting}', title='🎄 节日彩蛋', description='特殊节日网站会有特殊提示', points=20, difficulty="高级"),
+        DBADVENTUREFlag(flag_key='GAME{api_endpoints}', title='🔌 API概念', description='访问 /docs 看所有接口', points=20, difficulty="高级"),
+        DBADVENTUREFlag(flag_key='GAME{UFM}', title='🔄 Atbash密码', description='A变成Z, B变成Y, C变成X...', points=20, difficulty="高级"),
+        DBADVENTUREFlag(flag_key='GAME{cross_browser}', title='🌍 跨浏览器测试', description='不同浏览器渲染可能略有差异', points=20, difficulty="高级"),
+        DBADVENTUREFlag(flag_key='GAME{screenshot_master}', title='📸 截图达人', description='Windows: Win+Shift+S, Mac: Cmd+Shift+4', points=20, difficulty="高级"),
+        DBADVENTUREFlag(flag_key='GAME{121_yuan}', title='📈 通胀计算', description='2026=100, 2027=110, 2028=?', points=20, difficulty="高级"),
+        DBADVENTUREFlag(flag_key='GAME{2024}', title='📅 历史追溯', description='源码ASCII艺术里有©年份', points=20, difficulty="高级"),
+        DBADVENTUREFlag(flag_key='GAME{cookie_inspection}', title='🍪 Cookie检查员', description='cookie里可能有惊喜', points=20, difficulty="高级"),
+        DBADVENTUREFlag(flag_key='GAME{largest_request}', title='📊 流量分析', description='F12→Network→刷新→看Size列', points=20, difficulty="高级"),
+        DBADVENTUREFlag(flag_key='GAME{vue_js}', title='🟢 Vue.js', description='看源码里的script标签', points=20, difficulty="高级"),
+        DBADVENTUREFlag(flag_key='GAME{admin_page}', title='👑 后台入口', description='试试在网址后面加/admin', points=20, difficulty="高级"),
+        DBADVENTUREFlag(flag_key='GAME{curl_master}', title='💻 终端高手', description='curl https://yhymoney.asia/', points=20, difficulty="高级"),
+        DBADVENTUREFlag(flag_key='GAME{load_time}', title='⏱️ 加载时间', description='F12→Network→看底部Load时间', points=20, difficulty="高级"),
+        DBADVENTUREFlag(flag_key='GAME{dom_manipulation}', title='🎨 DOM操作', description='F12→Console→输入代码→回车', points=25, difficulty="高手"),
+        DBADVENTUREFlag(flag_key='GAME{third_party_libs}', title='📦 依赖分析', description="源码里找<script src='...'>", points=25, difficulty="高手"),
+        DBADVENTUREFlag(flag_key='GAME{fake_admin_maze}', title='🪤 蜜罐陷阱', description='访问 /admin-panel', points=25, difficulty="高手"),
+        DBADVENTUREFlag(flag_key='GAME{env_file_hunter}', title='🗂️ 隐藏文件猎人', description='访问 /.env', points=25, difficulty="高手"),
+        DBADVENTUREFlag(flag_key='GAME{javascript}', title='📜 JavaScript', description='网页交互的核心语言', points=25, difficulty="高手"),
+        DBADVENTUREFlag(flag_key='GAME{cascading_style_sheets}', title='🎨 CSS', description='Cascading Style Sheets', points=25, difficulty="高手"),
+        DBADVENTUREFlag(flag_key='GAME{structured_query_language}', title='🗄️ SQL', description='数据库查询语言', points=25, difficulty="高手"),
+        DBADVENTUREFlag(flag_key='GAME{hypertext_markup_language}', title='📄 HTML', description='网页的基础语言', points=25, difficulty="高手"),
+        DBADVENTUREFlag(flag_key='GAME{content_delivery_network}', title='🚀 CDN加速', description='Content Delivery Network', points=25, difficulty="高手"),
+        DBADVENTUREFlag(flag_key='GAME{sqlite_database}', title='🗃️ SQLite', description='这个网站用的什么数据库？', points=25, difficulty="高手"),
+        DBADVENTUREFlag(flag_key='GAME{inspect_element_edit}', title='✏️ 网页编辑', description='F12→Elements→双击文字→修改', points=25, difficulty="高手"),
+        DBADVENTUREFlag(flag_key='GAME{aliyun_shanghai}', title='🗺️ IP地理', description='8.209.219.82 是哪里的IP？', points=25, difficulty="高手"),
+        DBADVENTUREFlag(flag_key='GAME{ssl_certificate}', title='📜 SSL证书', description='点地址栏的🔒锁图标', points=25, difficulty="高手"),
+        DBADVENTUREFlag(flag_key='GAME{domain_name_system}', title='📡 DNS', description='Domain Name System', points=25, difficulty="高手"),
+        DBADVENTUREFlag(flag_key='GAME{direct_ip_access}', title='🔢 IP直连', description='试浏览器输入8.209.219.82', points=25, difficulty="高手"),
+        DBADVENTUREFlag(flag_key='GAME{fastest_request}', title='⚡ 最快的请求', description='F12→Network→排序Time列', points=25, difficulty="高手"),
+        DBADVENTUREFlag(flag_key='GAME{responsive_mode}', title='📱 模拟手机', description='F12→Toggle device toolbar', points=25, difficulty="高手"),
+        DBADVENTUREFlag(flag_key='GAME{favicon_check}', title='🖼️ Favicon', description='浏览器标签页上的小图标', points=25, difficulty="高手"),
+        DBADVENTUREFlag(flag_key='GAME{todo_comments}', title='📝 待办注释', description='程序员留下的笔记', points=25, difficulty="高手"),
+        DBADVENTUREFlag(flag_key='GAME{not_found_404}', title='❌ 404错误', description='访问 yhymoney.asia/abcdefg', points=25, difficulty="高手"),
+        DBADVENTUREFlag(flag_key='GAME{favorite_anime}', title='💝 动漫推荐', description='留言板分享你喜欢的动漫角色', points=30, difficulty="大师"),
+        DBADVENTUREFlag(flag_key='GAME{emiya_shirou}', title='🗡️ 经典台词', description='Fate/stay night 的主角', points=30, difficulty="大师"),
+        DBADVENTUREFlag(flag_key='GAME{unlimited_blade_works}', title='⚔️ 无限剑制', description='Fate里的固有结界', points=30, difficulty="大师"),
+        DBADVENTUREFlag(flag_key='GAME{mikufans}', title='📺 B站历史', description='B站最早的名字', points=30, difficulty="大师"),
+        DBADVENTUREFlag(flag_key='GAME{hokuto_no_ken}', title='👊 北斗神拳', description='拳四郎的经典台词', points=30, difficulty="大师"),
+        DBADVENTUREFlag(flag_key='GAME{guido_van_rossum}', title='🐍 Python之父', description="搜索'Python创始人'", points=30, difficulty="大师"),
+        DBADVENTUREFlag(flag_key='GAME{linus_torvalds}', title='🐧 Linux之父', description="搜索'Linux创始人'", points=30, difficulty="大师"),
+        DBADVENTUREFlag(flag_key='GAME{tradition}', title='👋 编程传统', description='这是编程界的传统', points=30, difficulty="大师"),
+        DBADVENTUREFlag(flag_key='GAME{1969}', title='🌐 互联网元年', description='ARPANET诞生之年', points=30, difficulty="大师"),
+        DBADVENTUREFlag(flag_key='GAME{1991}', title='📟 WWW诞生', description='Tim Berners-Lee创建的', points=30, difficulty="大师"),
+        DBADVENTUREFlag(flag_key='GAME{moth_in_relay}', title='🐛 Bug的由来', description='一只真的虫子导致计算机故障', points=30, difficulty="大师"),
+        DBADVENTUREFlag(flag_key='GAME{ada_lovelace}', title='👩\u200d💻 编程之母', description='19世纪的女性数学家', points=30, difficulty="大师"),
+        DBADVENTUREFlag(flag_key='GAME{encryption_difference}', title='🔐 HTTP vs HTTPS', description='HTTPS多了一层加密', points=30, difficulty="大师"),
+        DBADVENTUREFlag(flag_key='GAME{room_404}', title='🚪 404房间', description='传闻来自CERN的404号房间', points=30, difficulty="大师"),
+        DBADVENTUREFlag(flag_key='GAME{first_robot_movie}', title='🤖 第一个机器人', description='影史第一个机器人角色', points=30, difficulty="大师"),
+        DBADVENTUREFlag(flag_key='GAME{2016}', title='🦾 AI里程碑', description='围棋人机大战', points=30, difficulty="大师"),
+        DBADVENTUREFlag(flag_key='GAME{github}', title='🐙 GitHub', description='程序员最爱的网站', points=30, difficulty="大师"),
+        DBADVENTUREFlag(flag_key='GAME{programmers_day}', title='💻 程序员节', description='2的10次方', points=30, difficulty="大师"),
+        DBADVENTUREFlag(flag_key='GAME{eniac}', title='🖥️ 计算机始祖', description='1946年诞生的庞然大物', points=30, difficulty="大师"),
+        DBADVENTUREFlag(flag_key='GAME{douglas_engelbart}', title='🖱️ 鼠标之父', description='1960年代发明的', points=30, difficulty="大师"),
+        DBADVENTUREFlag(flag_key='GAME{ascii_art_share}', title='🎨 ASCII创作', description='用字符画一幅简单的画', points=50, difficulty="传说"),
+        DBADVENTUREFlag(flag_key='GAME{share_your_dream}', title='🌟 梦想分享', description='写下你未来的梦想', points=50, difficulty="传说"),
+        DBADVENTUREFlag(flag_key='GAME{best_feature}', title='🏆 最佳功能', description='留言告诉GP你的想法', points=50, difficulty="传说"),
+        DBADVENTUREFlag(flag_key='GAME{design_a_challenge}', title='🧠 出题人', description='给下一关设计题目', points=50, difficulty="传说"),
+        DBADVENTUREFlag(flag_key='GAME{letter_to_future}', title='✉️ 给未来写信', description='3年后你想成为什么样的人？', points=50, difficulty="传说"),
+        DBADVENTUREFlag(flag_key='GAME{progress_check}', title='📊 自我评估', description='看看面板上绿色的数字', points=50, difficulty="传说"),
+        DBADVENTUREFlag(flag_key='GAME{share_with_friend}', title='👫 分享快乐', description='把网站分享给朋友', points=50, difficulty="传说"),
+        DBADVENTUREFlag(flag_key='GAME{feedback_for_gp}', title='💡 建议达人', description='留言告诉GP你的建议', points=50, difficulty="传说"),
+        DBADVENTUREFlag(flag_key='GAME{reward_wish}', title='🎁 奖励愿望', description='留言告诉GP', points=50, difficulty="传说"),
+        DBADVENTUREFlag(flag_key='GAME{you_are_legend}', title='👑 传说达成', description='完成了100关的你，已经超越了99%的人', points=50, difficulty="传说"),
     ]
     for f in flags: db.add(f)
     db.commit()
     hints = [
-        DBCTFHint(flag_key='FLAG{welcome_to_ctf}', hint_text='The journey begins here.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{welcome_to_ctf}', hint_text='访问 /ctf 页面', hint_order=2),
-        DBCTFHint(flag_key='FLAG{view_source_is_step_one}', hint_text='Right-click anywhere on the page.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{view_source_is_step_one}', hint_text='右键→查看网页源代码', hint_order=2),
-        DBCTFHint(flag_key='FLAG{http_headers_tell_all}', hint_text='Every HTTP response carries metadata.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{http_headers_tell_all}', hint_text='F12→Network→刷新→点第一个请求', hint_order=2),
-        DBCTFHint(flag_key='FLAG{robots_are_not_your_enemy}', hint_text='robots.txt tells crawlers what to avoid.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{robots_are_not_your_enemy}', hint_text='访问 /robots.txt', hint_order=2),
-        DBCTFHint(flag_key='FLAG{source_code_is_your_friend}', hint_text='View source and look for <!-- comments -->.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{source_code_is_your_friend}', hint_text="右键查看源码→搜索'FLAG'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{console_is_your_best_friend}', hint_text='The console.log() function is your friend.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{console_is_your_best_friend}', hint_text='F12→Console标签', hint_order=2),
-        DBCTFHint(flag_key='FLAG{cookies_are_delicious}', hint_text='Cookies store data sent by the server.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{cookies_are_delicious}', hint_text='F12→Application→Cookies', hint_order=2),
-        DBCTFHint(flag_key='FLAG{meta_tags_hide_secrets}', hint_text='Check the <head> section of the HTML.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{meta_tags_hide_secrets}', hint_text="查看网页源码→搜索'meta'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{f12_is_your_gateway}', hint_text='Press F12 on your keyboard.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{f12_is_your_gateway}', hint_text='按F12键', hint_order=2),
-        DBCTFHint(flag_key='FLAG{every_journey_begins_with_curiosity}', hint_text="You've completed the tutorial!", hint_order=1),
-        DBCTFHint(flag_key='FLAG{every_journey_begins_with_curiosity}', hint_text='恭喜完成入门！下一关开始真正的挑战', hint_order=2),
-        DBCTFHint(flag_key='FLAG{base64_is_not_encryption}', hint_text='What encoding ends with = or == ?', hint_order=1),
-        DBCTFHint(flag_key='FLAG{base64_is_not_encryption}', hint_text="echo 'Q29uZ...' | base64 -d", hint_order=2),
-        DBCTFHint(flag_key='FLAG{rot13_is_the_original_crypto}', hint_text='Rotate each letter by 13 positions.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{rot13_is_the_original_crypto}', hint_text="www.rot13.com 或 tr 'A-Za-z' 'N-ZA-Mn-za-m'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{hex_is_everywhere}', hint_text='Each 2 characters = 1 byte in hex.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{hex_is_everywhere}', hint_text="echo '464c...' | xxd -r -p", hint_order=2),
-        DBCTFHint(flag_key='FLAG{morse_code_is_classic}', hint_text='.- is A, -... is B, etc.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{morse_code_is_classic}', hint_text="搜索'morse code decoder'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{url_encoding_hides_things}', hint_text='%XX is URL-encoded hex.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{url_encoding_hides_things}', hint_text='decodeURIComponent() 或在线URL解码', hint_order=2),
-        DBCTFHint(flag_key='FLAG{binary_is_the_native_tongue}', hint_text='8 bits = 1 ASCII character.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{binary_is_the_native_tongue}', hint_text="搜索'binary to text converter'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{hidden_in_plain_sight}', hint_text='Look for CSS that hides text visually.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{hidden_in_plain_sight}', hint_text="F12→Elements→搜索'hidden'或'color:'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{http_methods_matter}', hint_text="GET isn't the only HTTP method.", hint_order=1),
-        DBCTFHint(flag_key='FLAG{http_methods_matter}', hint_text='curl -X POST https://yhymoney.asia/api/v1/ctf/status', hint_order=2),
-        DBCTFHint(flag_key='FLAG{comment_out_the_truth}', hint_text='Check the JavaScript source for comments.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{comment_out_the_truth}', hint_text='查看页面JS文件中的注释', hint_order=2),
-        DBCTFHint(flag_key='FLAG{error_pages_tell_stories}', hint_text="Try accessing a page that doesn't exist.", hint_order=1),
-        DBCTFHint(flag_key='FLAG{error_pages_tell_stories}', hint_text='yhymoney.asia/nonexistent', hint_order=2),
-        DBCTFHint(flag_key='FLAG{backup_files_are_dangerous}', hint_text='Developers often leave backup files.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{backup_files_are_dangerous}', hint_text='试试 /backup.zip /backup.tar.gz /backup.old', hint_order=2),
-        DBCTFHint(flag_key='FLAG{hidden_api_endpoints}', hint_text='FastAPI auto-generates API documentation.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{hidden_api_endpoints}', hint_text='访问 /docs 或 /openapi.json', hint_order=2),
-        DBCTFHint(flag_key='FLAG{jwt_tokens_are_not_magic}', hint_text='JWT has 3 parts separated by dots.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{jwt_tokens_are_not_magic}', hint_text='F12→Network→看请求头→复制token→jwt.io', hint_order=2),
-        DBCTFHint(flag_key='FLAG{referer_header_leaks}', hint_text='The Referer header tells where you came from.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{referer_header_leaks}', hint_text='F12→Network→Request Headers→Referer', hint_order=2),
-        DBCTFHint(flag_key='FLAG{user_agent_can_lie}', hint_text='You can pretend to be any browser.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{user_agent_can_lie}', hint_text="curl -A 'Googlebot' https://yhymoney.asia/", hint_order=2),
-        DBCTFHint(flag_key='FLAG{ssti_smells_fishy}', hint_text='Server-Side Template Injection leaves patterns.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{ssti_smells_fishy}', hint_text='/api/v1/fun/list?test={{7*7}}', hint_order=2),
-        DBCTFHint(flag_key='FLAG{directory_listing_forbidden}', hint_text='Some directories might list their contents.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{directory_listing_forbidden}', hint_text='试试各种常见目录路径', hint_order=2),
-        DBCTFHint(flag_key='FLAG{xss_is_everywhere}', hint_text='Cross-Site Scripting — injected JavaScript.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{xss_is_everywhere}', hint_text='留言板输入框测试特殊字符', hint_order=2),
-        DBCTFHint(flag_key='FLAG{csrf_token_missing}', hint_text='Cross-Site Request Forgery needs tokens.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{csrf_token_missing}', hint_text='检查POST请求的form data', hint_order=2),
-        DBCTFHint(flag_key='FLAG{localstorage_is_not_safe}', hint_text='localStorage stores data in your browser.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{localstorage_is_not_safe}', hint_text='F12→Application→Local Storage', hint_order=2),
-        DBCTFHint(flag_key='FLAG{md5_is_broken_use_sha256}', hint_text='MD5 has known collisions.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{md5_is_broken_use_sha256}', hint_text="echo -n 'flag' | md5sum", hint_order=2),
-        DBCTFHint(flag_key='FLAG{xor_with_single_byte}', hint_text='Try XOR with a single byte key.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{xor_with_single_byte}', hint_text="搜索'single-byte XOR decoder'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{vigenere_is_classic_crypto}', hint_text='Vigenère cipher uses a repeating keyword.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{vigenere_is_classic_crypto}', hint_text="搜索'Vigenère cipher decoder'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{sql_injection_is_still_a_thing}', hint_text='SQL injection tricks the database.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{sql_injection_is_still_a_thing}', hint_text="在LP PIN验证框输入 ' OR '1'='1", hint_order=2),
-        DBCTFHint(flag_key='FLAG{nosql_injection_exists_too}', hint_text='NoSQL databases have their own injection.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{nosql_injection_exists_too}', hint_text="搜索'NoSQL injection $ne'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{command_injection_backticks}', hint_text='Shell command injection via unsanitized input.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{command_injection_backticks}', hint_text="搜索'command injection payloads'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{idor_is_simple_but_deadly}', hint_text='Insecure Direct Object Reference.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{idor_is_simple_but_deadly}', hint_text='修改URL中的数字ID', hint_order=2),
-        DBCTFHint(flag_key='FLAG{rate_limiting_is_absent}', hint_text='Without rate limiting, brute force is easy.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{rate_limiting_is_absent}', hint_text='写个循环发请求', hint_order=2),
-        DBCTFHint(flag_key='FLAG{path_traversal_dot_dot_slash}', hint_text='../ can escape the intended directory.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{path_traversal_dot_dot_slash}', hint_text='在URL或参数中尝试 ../../../', hint_order=2),
-        DBCTFHint(flag_key='FLAG{xxe_is_still_relevant}', hint_text='XML parsers can be tricked.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{xxe_is_still_relevant}', hint_text="搜索'XXE payload'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{ssrf_is_the_sleeper_threat}', hint_text='Server-Side Request Forgery.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{ssrf_is_the_sleeper_threat}', hint_text='在URL参数中传入 http://127.0.0.1:8000', hint_order=2),
-        DBCTFHint(flag_key='FLAG{deserialization_is_dangerous}', hint_text='Unsafe deserialization = RCE.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{deserialization_is_dangerous}', hint_text="搜索'Python pickle RCE'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{jwt_none_algorithm_attack}', hint_text='Some JWT libraries accept alg:none.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{jwt_none_algorithm_attack}', hint_text='jwt.io → 改header→ {\"alg\":\"none\"}', hint_order=2),
-        DBCTFHint(flag_key='FLAG{timing_attack_is_subtle}', hint_text='Response time can leak information.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{timing_attack_is_subtle}', hint_text='测量不同输入的响应时间', hint_order=2),
-        DBCTFHint(flag_key='FLAG{steganography_in_images}', hint_text='Images can hide data.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{steganography_in_images}', hint_text='下载图片→用 steghide 或 strings 检查', hint_order=2),
-        DBCTFHint(flag_key='FLAG{strings_command_is_powerful}', hint_text='strings extracts readable text from binaries.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{strings_command_is_powerful}', hint_text='strings filename | grep FLAG', hint_order=2),
-        DBCTFHint(flag_key='FLAG{metafile_data_leaks}', hint_text='Photos carry GPS, camera, and timestamp data.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{metafile_data_leaks}', hint_text='exiftool image.jpg', hint_order=2),
-        DBCTFHint(flag_key='FLAG{git_exposed_dot_git}', hint_text='Exposed .git directories leak source code.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{git_exposed_dot_git}', hint_text='访问 /.git/config', hint_order=2),
-        DBCTFHint(flag_key='FLAG{env_file_leaked}', hint_text='.env files contain secrets.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{env_file_leaked}', hint_text='访问 /.env', hint_order=2),
-        DBCTFHint(flag_key='FLAG{dockerfile_tells_the_stack}', hint_text='Dockerfiles reveal the infrastructure.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{dockerfile_tells_the_stack}', hint_text='访问 /Dockerfile', hint_order=2),
-        DBCTFHint(flag_key='FLAG{cors_misconfiguration}', hint_text='CORS: Access-Control-Allow-Origin: * is dangerous.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{cors_misconfiguration}', hint_text='F12→检查响应头 Access-Control-*', hint_order=2),
-        DBCTFHint(flag_key='FLAG{clickjacking_missing_xframe}', hint_text='Without X-Frame-Options, site can be iframed.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{clickjacking_missing_xframe}', hint_text='检查响应头是否有 X-Frame-Options', hint_order=2),
-        DBCTFHint(flag_key='FLAG{csp_is_not_configured}', hint_text='Content-Security-Policy prevents XSS.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{csp_is_not_configured}', hint_text='检查响应头 CSP', hint_order=2),
-        DBCTFHint(flag_key='FLAG{hsts_missing}', hint_text='HSTS forces HTTPS.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{hsts_missing}', hint_text='检查响应头 Strict-Transport-Security', hint_order=2),
-        DBCTFHint(flag_key='FLAG{caesar_cipher_is_ancient}', hint_text='Shift each letter by a fixed amount.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{caesar_cipher_is_ancient}', hint_text="搜索'Caesar cipher decoder'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{aes_ecb_penguin}', hint_text='ECB mode leaks patterns.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{aes_ecb_penguin}', hint_text='研究 AES ECB vs CBC 模式', hint_order=2),
-        DBCTFHint(flag_key='FLAG{padding_oracle_is_classic}', hint_text='Padding Oracle lets you decrypt without the key.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{padding_oracle_is_classic}', hint_text="搜索'Padding Oracle attack explained'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{length_extension_attack}', hint_text='Merkle-Damgard hash construction has this flaw.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{length_extension_attack}', hint_text="搜索'hash length extension attack'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{rsa_wiener_attack}', hint_text='Small private exponent d = vulnerable.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{rsa_wiener_attack}', hint_text="搜索'RSA Wiener attack'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{bleichenbacher_oracle}', hint_text='The million message attack.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{bleichenbacher_oracle}', hint_text="搜索'Bleichenbacher attack'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{buffer_overflow_in_the_wild}', hint_text='Overflow the buffer → control execution flow.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{buffer_overflow_in_the_wild}', hint_text="搜索'buffer overflow for beginners'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{format_string_is_powerful}', hint_text='printf without format specifier is dangerous.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{format_string_is_powerful}', hint_text="搜索'format string vulnerability'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{ret2libc_is_a_technique}', hint_text="When you can't execute shellcode, use existing code.", hint_order=1),
-        DBCTFHint(flag_key='FLAG{ret2libc_is_a_technique}', hint_text="搜索'ret2libc attack'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{rop_chains_are_art}', hint_text='Chain gadgets together to execute arbitrary code.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{rop_chains_are_art}', hint_text="搜索'ROP chain tutorial'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{heap_exploitation_basics}', hint_text='Heap bugs are harder but more rewarding.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{heap_exploitation_basics}', hint_text="搜索'heap exploitation basics'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{race_condition_toctou}', hint_text='Between check and use, things can change.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{race_condition_toctou}', hint_text="搜索'TOCTOU race condition'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{dns_rebinding_attack}', hint_text='DNS rebinding bypasses same-origin policy.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{dns_rebinding_attack}', hint_text="搜索'DNS rebinding attack'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{prototype_pollution_in_js}', hint_text='JavaScript objects inherit from prototypes.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{prototype_pollution_in_js}', hint_text="搜索'prototype pollution'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{oauth2_misconfiguration}', hint_text='OAuth flow has many edge cases.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{oauth2_misconfiguration}', hint_text="搜索'OAuth2 redirect_uri bypass'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{saml_bypass_via_comment}', hint_text='SAML relies on XML — which has comments.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{saml_bypass_via_comment}', hint_text="搜索'SAML XML comment injection'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{graphql_introspection_enabled}', hint_text='Introspection reveals the entire API schema.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{graphql_introspection_enabled}', hint_text="搜索'GraphQL introspection attack'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{http_request_smuggling}', hint_text='Frontend and backend parse requests differently.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{http_request_smuggling}', hint_text="搜索'HTTP request smuggling'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{websocket_hijacking}', hint_text='WebSocket without origin check = hijackable.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{websocket_hijacking}', hint_text='检查WebSocket连接的Origin头', hint_order=2),
-        DBCTFHint(flag_key='FLAG{subdomain_takeover_potential}', hint_text='Dead DNS records point to services you can claim.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{subdomain_takeover_potential}', hint_text="搜索'subdomain takeover'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{shodan_is_your_eye}', hint_text='Shodan indexes internet-connected devices.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{shodan_is_your_eye}', hint_text='shodan.io 搜索你的IP', hint_order=2),
-        DBCTFHint(flag_key='FLAG{zero_day_is_a_mindset}', hint_text='A zero-day is just a bug nobody found yet.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{zero_day_is_a_mindset}', hint_text='阅读CVE数据库和PoC代码', hint_order=2),
-        DBCTFHint(flag_key='FLAG{fuzzing_finds_bugs}', hint_text='Random input → unexpected behavior → bugs.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{fuzzing_finds_bugs}', hint_text="搜索'fuzzing with AFL tutorial'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{symbolic_execution_is_magic}', hint_text='Symbolic execution solves constraints automatically.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{symbolic_execution_is_magic}', hint_text="搜索'angr CTF tutorial'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{return_oriented_shellcode}', hint_text='Build a chain: ROP → mprotect → shellcode.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{return_oriented_shellcode}', hint_text="搜索'ROP to shellcode chain'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{kernel_exploitation_101}', hint_text='Kernel bugs = full system control.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{kernel_exploitation_101}', hint_text="搜索'kernel exploitation basics'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{side_channel_is_stealthy}', hint_text='The computer itself leaks secrets.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{side_channel_is_stealthy}', hint_text="搜索'side-channel attack explained'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{cache_timing_is_real}', hint_text='CPU cache timing can leak memory content.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{cache_timing_is_real}', hint_text="搜索'Meltdown and Spectre explained'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{quantum_crypto_is_coming}', hint_text='Quantum computers will break RSA and ECC.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{quantum_crypto_is_coming}', hint_text="搜索'shor algorithm and post-quantum'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{blockchain_smart_contract_bugs}', hint_text='Smart contract bugs = free money for hackers.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{blockchain_smart_contract_bugs}', hint_text="搜索'reentrancy attack ethereum'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{reverse_engineering_is_an_art}', hint_text='Reverse engineering reveals how programs work.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{reverse_engineering_is_an_art}', hint_text='下载Ghidra，分析一个简单程序', hint_order=2),
-        DBCTFHint(flag_key='FLAG{code_audit_is_essential}', hint_text='Manual code review finds what tools miss.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{code_audit_is_essential}', hint_text='学习OWASP Code Review Guide', hint_order=2),
-        DBCTFHint(flag_key='FLAG{threat_modeling_is_proactive}', hint_text='Think like an attacker before you code.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{threat_modeling_is_proactive}', hint_text="搜索'STRIDE threat modeling'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{red_team_is_the_ultimate_test}', hint_text='Red team = full-scope adversarial simulation.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{red_team_is_the_ultimate_test}', hint_text="搜索'red team operations guide'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{pwn_college_is_a_thing}', hint_text='Free binary exploitation education.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{pwn_college_is_a_thing}', hint_text='访问 pwn.college', hint_order=2),
-        DBCTFHint(flag_key='FLAG{hackthebox_is_your_playground}', hint_text='Real machines, real challenges.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{hackthebox_is_your_playground}', hint_text='访问 hackthebox.com', hint_order=2),
-        DBCTFHint(flag_key='FLAG{you_are_a_real_hacker_now}', hint_text='This is the ultimate achievement.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{you_are_a_real_hacker_now}', hint_text='集齐前90个flag', hint_order=2),
-        DBCTFHint(flag_key='FLAG{the_42nd_challenge}', hint_text='The answer to life, the universe, and everything.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{the_42nd_challenge}', hint_text='键盘输入 4 然后 2', hint_order=2),
-        DBCTFHint(flag_key='FLAG{full_chain_exploitation}', hint_text='The complete attack lifecycle.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{full_chain_exploitation}', hint_text='研究Cyber Kill Chain模型', hint_order=2),
-        DBCTFHint(flag_key='FLAG{responsible_disclosure_is_key}', hint_text='With great power comes great responsibility.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{responsible_disclosure_is_key}', hint_text="搜索'responsible disclosure policy'", hint_order=2),
-        DBCTFHint(flag_key='FLAG{every_expert_was_once_a_beginner}', hint_text='Remember where you started.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{every_expert_was_once_a_beginner}', hint_text='CTF的旅途，从第一道题开始', hint_order=2),
-        DBCTFHint(flag_key='FLAG{sharing_knowledge_is_the_way}', hint_text='Teaching others deepens your understanding.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{sharing_knowledge_is_the_way}', hint_text='写一篇CTF writeup并发布', hint_order=2),
-        DBCTFHint(flag_key='FLAG{white_hat_is_a_lifestyle}', hint_text="Security is not a product, it's a process.", hint_order=1),
-        DBCTFHint(flag_key='FLAG{white_hat_is_a_lifestyle}', hint_text='参与Bug Bounty或安全社区', hint_order=2),
-        DBCTFHint(flag_key='FLAG{bug_bounty_is_waiting}', hint_text='Companies will pay you to find bugs.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{bug_bounty_is_waiting}', hint_text='访问 hackerone.com', hint_order=2),
-        DBCTFHint(flag_key='FLAG{the_learning_never_stops}', hint_text='Technology evolves, so should you.', hint_order=1),
-        DBCTFHint(flag_key='FLAG{the_learning_never_stops}', hint_text='订阅安全博客和CVE feeds', hint_order=2),
-        DBCTFHint(flag_key='FLAG{the_final_boss_defeated}', hint_text='CONGRATULATIONS! You are a TRUE White Hat!', hint_order=1),
-        DBCTFHint(flag_key='FLAG{the_final_boss_defeated}', hint_text='全部100题完成！你是真正的白客！', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{hello_world}', hint_text='在提交框里打字就行', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{hello_world}', hint_text='输入 hello', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{found_me_in_source}', hint_text='右键→查看网页源代码', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{found_me_in_source}', hint_text='和第一题一样的方法！', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{hidden_page_found}', hint_text='直接在浏览器地址栏输入', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{hidden_page_found}', hint_text='yhymoney.asia/secrets', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{powered_by_python}', hint_text='滚到页面最底部', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{powered_by_python}', hint_text='Powered by 后面是什么？', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{console_rainbow}', hint_text='按F12键', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{console_rainbow}', hint_text='Console=控制台', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{rin_count_7}', hint_text="右键→查看源代码→Ctrl+F搜索'凛'", hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{rin_count_7}', hint_text='在源码顶部ASCII art区域', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{bo_cai_button}', hint_text='先输入PIN:0103登录', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{bo_cai_button}', hint_text='抽奖厅的按钮', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{yhymoney.asia}', hint_text='看浏览器地址栏', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{yhymoney.asia}', hint_text='yhymoney.???', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{bilibili_link_found}', hint_text='Ctrl+F搜索bilibili', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{bilibili_link_found}', hint_text='源码里有bilibili.com的链接', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{gp_notice_popup}', hint_text='先登录PIN:0103', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{gp_notice_popup}', hint_text='橙色边框的全屏弹窗', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{cool}', hint_text='A变成B，B变成C...', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{cool}', hint_text='IFNF = GAME, po = ?', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{welcome_yongyun}', hint_text='把整个字符串倒过来', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{welcome_yongyun}', hint_text='从最后一个字符开始读', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{hello_morse}', hint_text="搜索'摩尔斯电码表'", hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{hello_morse}', hint_text='G A M E', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{4}', hint_text='按F12', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{4}', hint_text='小学数学！', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{over_50_emoji}', hint_text='浏览整个页面，到处都是emoji', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{over_50_emoji}', hint_text="答案是'超过50个'", hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{say_hello_to_gp}', hint_text='登录后找到留言板', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{say_hello_to_gp}', hint_text='发送后会有微信通知GP', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{nav_is_over_1000}', hint_text='看页面最显眼的大数字', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{nav_is_over_1000}', hint_text='NAV > 1000', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{nav_click_easter_egg}', hint_text='狂点那个绿色大数字', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{nav_click_easter_egg}', hint_text='NAV数值', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{time_greeting}', hint_text='早中晚打开网站看看', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{time_greeting}', hint_text='标题栏会自动变化', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{42_dolphin}', hint_text='不需要输入框，直接按键', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{42_dolphin}', hint_text='42 = 生命宇宙及一切的答案', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{mobile_version}', hint_text='用手机浏览器打开', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{mobile_version}', hint_text='布局会自动适配', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{rin_ascii_art}', hint_text='右键查看源码→滚到最上面', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{rin_ascii_art}', hint_text='远坂凛的ASCII艺术画', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{bilibili_up}', hint_text='登录→留言板→写下UP主名字', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{bilibili_up}', hint_text='GP会看到你的留言', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{github_repo}', hint_text='Ctrl+F搜索github', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{github_repo}', hint_text='YiHx/Visualized-fund-monitorin', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{rin_daisuki}', hint_text='Flag提交框在上面', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{rin_daisuki}', hint_text='日语：超喜欢凛酱', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{https_protocol}', hint_text='看地址栏，https://', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{https_protocol}', hint_text='HTTPS = 加密连接', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{lottery_button_clicked}', hint_text='登录→找到紫色抽奖区域', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{lottery_button_clicked}', hint_text='看看抽奖机长什么样', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{console_log_master}', hint_text='JavaScript的打印函数', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{console_log_master}', hint_text='console.log可以输出任何东西', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{fate_ubw}', hint_text='去B站搜BV1GJ411x7h7', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{fate_ubw}', hint_text='Fate/stay night UBW', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{aGVsbG8=}', hint_text='在线base64编码工具', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{aGVsbG8=}', hint_text='结果是 aGVsbG8=', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{good}', hint_text='A→C, B→D, C→E...', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{good}', hint_text='ICOG→GOOD, qq→??', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{url_decode}', hint_text='每个%后面是十六进制', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{url_decode}', hint_text='%47=G, %41=A... 拼起来', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{8}', hint_text='1+1=2, 1+2=3, 2+3=5', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{8}', hint_text='3+5=?', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{html_comment_master}', hint_text="Ctrl+F搜索'<!--'", hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{html_comment_master}', hint_text='HTML注释不会被浏览器显示', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{cookie_in_devtools}', hint_text='网站会在你浏览器存小文件', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{cookie_in_devtools}', hint_text='叫Cookie（饼干）', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{responsive_design}', hint_text='用手机打开试试', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{responsive_design}', hint_text='这叫响应式设计responsive', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{upload_image}', hint_text='点击📎按钮', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{upload_image}', hint_text='支持jpg/png/gif/webp', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{icp_number}', hint_text='国内网站底部通常有备案号', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{icp_number}', hint_text='这个网站可能没有备案🤫', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{55}', hint_text='(1+10)×10÷2', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{55}', hint_text='高斯小时候就发现了这个公式', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{2026}', hint_text='F12→Console', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{2026}', hint_text='2026年', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{net_asset_value}', hint_text='搜索NAV金融含义', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{net_asset_value}', hint_text='净资产值 net asset value', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{konami_code_beginner}', hint_text='试试按这个顺序', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{konami_code_beginner}', hint_text='这叫Konami Code，游戏界最有名的秘籍', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{daily_streak_3}', hint_text='每天登录→抽奖→坚持', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{daily_streak_3}', hint_text='成就系统会解锁', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{money_emoji_count}', hint_text='用浏览器的查找功能', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{money_emoji_count}', hint_text='大概有XX个', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{Hi_binary}', hint_text='每8位二进制=1个字符', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{Hi_binary}', hint_text='01001000=H, 01101001=i', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{general_partner}', hint_text='General Partner', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{general_partner}', hint_text='普通合伙人=基金管理人', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{limited_partner}', hint_text='Limited Partner', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{limited_partner}', hint_text='有限合伙人=投资人(弟弟)', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{html_viewer}', hint_text='Elements=元素=网页骨架', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{html_viewer}', hint_text='可以看到网页的所有标签', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{favorite_emoji}', hint_text='到处都是！', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{favorite_emoji}', hint_text='比如 💎 🎰 🏆 🌟', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{user_agent}', hint_text='navigator.userAgent', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{user_agent}', hint_text='Chrome/Safari/Firefox...', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{47_41_4D_45}', hint_text='G=71=0x47, A=65=0x41', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{47_41_4D_45}', hint_text='0x47 0x41 0x4D 0x45', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{open_source_github}', hint_text='搜索YiHx/Visualized-fund-monitorin', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{open_source_github}', hint_text='开源=open source', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{wrong_pin_alert}', hint_text='故意输错PIN 0103', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{wrong_pin_alert}', hint_text="系统会提示'授权码错误'", hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{1.5_percent}', hint_text='HURDLE_RATE = 0.015', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{1.5_percent}', hint_text='每月1.5%的复利', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{secure}', hint_text='S=Secure=安全', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{secure}', hint_text='加密传输', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{html_injection}', hint_text='HTML标签可能被执行', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{html_injection}', hint_text='观察是否被过滤了', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{disallowed_paths}', hint_text='直接浏览器访问', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{disallowed_paths}', hint_text='Disallow: 后面的路径', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{christmas_greeting}', hint_text='或者在页面源码里找到圣诞节相关代码', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{christmas_greeting}', hint_text='getSpecialDay函数', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{api_endpoints}', hint_text='API=应用程序接口', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{api_endpoints}', hint_text='yhymoney.asia/docs', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{UFM}', hint_text='F↔U, U↔F, N↔M', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{UFM}', hint_text='Atbash是最简单的替换密码', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{cross_browser}', hint_text='试试多个浏览器', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{cross_browser}', hint_text='这就是为什么要做兼容测试', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{screenshot_master}', hint_text='Windows/Mac都有自带截图工具', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{screenshot_master}', hint_text='截一张网站首页', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{121_yuan}', hint_text='每年乘以1.1', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{121_yuan}', hint_text='100×1.1×1.1=121', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{2024}', hint_text="Ctrl+F搜索'©'", hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{2024}', hint_text='2024年开始的', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{cookie_inspection}', hint_text='document.cookie 显示当前cookie', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{cookie_inspection}', hint_text='里面有FLAG提示', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{largest_request}', hint_text='可能是一些大JS库', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{largest_request}', hint_text='tailwindcss或vue.js', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{vue_js}', hint_text='vue.global.js', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{vue_js}', hint_text='Vue.js 3', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{admin_page}', hint_text='yhymoney.asia/???', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{admin_page}', hint_text='需要GP密码才能进入', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{curl_master}', hint_text='打开终端/命令行', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{curl_master}', hint_text='curl是获取网页的命令', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{load_time}', hint_text='一般在200ms-2000ms之间', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{load_time}', hint_text='取决于网络速度', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{dom_manipulation}', hint_text='JavaScript可以实时修改页面', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{dom_manipulation}', hint_text='DOM=文档对象模型', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{third_party_libs}', hint_text='vue.js + tailwindcss', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{third_party_libs}', hint_text='只有2个CDN库', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{fake_admin_maze}', hint_text='这是一个ADVENTURE蜜罐页面', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{fake_admin_maze}', hint_text='假的登录页面', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{env_file_hunter}', hint_text='环境变量配置文件', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{env_file_hunter}', hint_text='里面有假密码', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{javascript}', hint_text='JS = Java???', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{javascript}', hint_text='其实是JavaScript', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{cascading_style_sheets}', hint_text='层叠样式表', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{cascading_style_sheets}', hint_text='控制网页的样式/颜色/布局', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{structured_query_language}', hint_text='Structured Query Language', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{structured_query_language}', hint_text='用来和数据库对话', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{hypertext_markup_language}', hint_text='HyperText Markup Language', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{hypertext_markup_language}', hint_text='超文本标记语言', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{content_delivery_network}', hint_text='全球分布的服务器网络', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{content_delivery_network}', hint_text='加快加载速度', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{sqlite_database}', hint_text='看Main.py第82行', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{sqlite_database}', hint_text='SQLite = 轻量级文件数据库', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{inspect_element_edit}', hint_text='改完后刷新就会恢复', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{inspect_element_edit}', hint_text='这只是本地修改', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{aliyun_shanghai}', hint_text="搜索'IP地址查询'", hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{aliyun_shanghai}', hint_text='阿里云 上海/杭州', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{ssl_certificate}', hint_text='点浏览器的锁图标', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{ssl_certificate}', hint_text='SSL/TLS证书', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{domain_name_system}', hint_text='域名→IP地址的翻译官', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{domain_name_system}', hint_text='就像电话本', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{direct_ip_access}', hint_text='和域名访问一样的效果', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{direct_ip_access}', hint_text='域名只是IP的别名', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{fastest_request}', hint_text='静态文件通常最快', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{fastest_request}', hint_text='可能是小图标或CSS', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{responsive_mode}', hint_text='切换设备工具栏', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{responsive_mode}', hint_text='模拟不同手机屏幕', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{favicon_check}', hint_text='通常是16×16的小图', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{favicon_check}', hint_text='这个网站可能没有favicon', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{todo_comments}', hint_text="搜索'TODO'或'FIXME'", hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{todo_comments}', hint_text='看看还有什么没完成的功能', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{not_found_404}', hint_text='404 = Not Found', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{not_found_404}', hint_text='页面未找到', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{favorite_anime}', hint_text='写下你心中最爱的角色', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{favorite_anime}', hint_text='GP也会看到', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{emiya_shirou}', hint_text='士郎的名言', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{emiya_shirou}', hint_text='衛宮士郎 Emiya Shirou', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{unlimited_blade_works}', hint_text='Archer的宝具', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{unlimited_blade_works}', hint_text='無限の剣製', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{mikufans}', hint_text='和初音未来有关', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{mikufans}', hint_text='Mikufans = 初音未来粉丝站', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{hokuto_no_ken}', hint_text='北斗の拳', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{hokuto_no_ken}', hint_text='お前はもう死んでいる', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{guido_van_rossum}', hint_text='荷兰人', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{guido_van_rossum}', hint_text='Guido van Rossum', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{linus_torvalds}', hint_text='芬兰人', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{linus_torvalds}', hint_text='Linus Torvalds', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{tradition}', hint_text='几乎每门语言教程都以Hello World开头', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{tradition}', hint_text='从1978年开始的传统', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{1969}', hint_text='1960年代末', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{1969}', hint_text='1969年ARPANET首次连接', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{1991}', hint_text='1990年代初', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{1991}', hint_text='1991年8月6日', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{moth_in_relay}', hint_text='1947年Grace Hopper发现', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{moth_in_relay}', hint_text='继电器里卡了一只飞蛾', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{ada_lovelace}', hint_text='拜伦的女儿', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{ada_lovelace}', hint_text='Ada Lovelace 阿达·洛芙莱斯', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{encryption_difference}', hint_text='TLS/SSL加密', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{encryption_difference}', hint_text='HTTPS更安全', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{room_404}', hint_text='万维网的发源地', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{room_404}', hint_text='CERN 404号房间=找不到', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{first_robot_movie}', hint_text='德国的无声科幻片', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{first_robot_movie}', hint_text='Maria the robot', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{2016}', hint_text='Google DeepMind', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{2016}', hint_text='2016年3月', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{github}', hint_text='微软旗下的代码平台', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{github}', hint_text='github.com', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{programmers_day}', hint_text='10月24日', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{programmers_day}', hint_text='中国程序员节', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{eniac}', hint_text='ENIAC', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{eniac}', hint_text='重达30吨，占地170平米', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{douglas_engelbart}', hint_text='Douglas Engelbart', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{douglas_engelbart}', hint_text='因为线像老鼠尾巴', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{ascii_art_share}', hint_text='比如画一只猫: /\\_/\\ ( o.o )', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{ascii_art_share}', hint_text='键盘上的字符就是你的画笔', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{share_your_dream}', hint_text='想成为什么样的人？', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{share_your_dream}', hint_text='GP会认真看的', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{best_feature}', hint_text='抽奖？视频通话？彩蛋？', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{best_feature}', hint_text='GP等着你的反馈', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{design_a_challenge}', hint_text='发挥你的创意', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{design_a_challenge}', hint_text='好的题目会被加进游戏', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{letter_to_future}', hint_text='2029年的你会感谢现在的你', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{letter_to_future}', hint_text='GP帮你保存', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{progress_check}', hint_text='X/100 就是你的进度', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{progress_check}', hint_text='每过一关都值得庆祝', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{share_with_friend}', hint_text='复制链接发给朋友', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{share_with_friend}', hint_text='一起闯关更有趣', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{feedback_for_gp}', hint_text='任何想法都可以', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{feedback_for_gp}', hint_text='GP真的会实现的', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{reward_wish}', hint_text='随便许愿！', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{reward_wish}', hint_text='GP会考虑的 😊', hint_order=2),
+        DBADVENTUREHint(flag_key='GAME{you_are_legend}', hint_text='你真的很棒！', hint_order=1),
+        DBADVENTUREHint(flag_key='GAME{you_are_legend}', hint_text='弟弟，GP为你骄傲！', hint_order=2),
     ]
     for h in hints: db.add(h)
     db.commit()
+
 
 
 @app.get("/robots.txt", include_in_schema=False)
@@ -1657,8 +1718,8 @@ Disallow: /hidden-api
 Disallow: /backup.zip
 Allow: /
 
-# FLAG{robots_are_not_your_enemy}
-# 恭喜你找到了第一个flag！去渗透挑战面板提交吧！
+# GAME{robots_are_not_your_enemy}
+# 恭喜你找到了第一个flag！去趣味闯关面板提交吧！
 # 提示：下一个flag藏在网页源代码里 👀
 """, media_type="text/plain")
 
@@ -1667,24 +1728,24 @@ from fastapi.responses import PlainTextResponse
 
 @app.get("/secret-panel", include_in_schema=False)
 def secret_panel():
-    return HTMLResponse(content="""<!DOCTYPE html><html><head><title>内部管理系统</title><style>body{background:#000;color:#0f0;font-family:monospace;padding:40px;text-align:center}h1{color:#f00}.hidden{color:#000}.hidden:hover{color:#0f0}</style></head><body><h1>⚠️ 警告：越权访问！</h1><p>你的IP已被记录：""" + _random.choice(["192.168.1.1","10.0.0.1","172.16.0.1"]) + """</p><p>系统已触发警报 🚨</p><br><p class="hidden">开玩笑的 😂 这是给你弟弟的白客训练场~</p><p class="hidden">试试访问 /hidden-api?token=guest</p></body></html>""")
+    return HTMLResponse(content="""<!DOCTYPE html><html><head><title>内部管理系统</title><style>body{background:#000;color:#0f0;font-family:monospace;padding:40px;text-align:center}h1{color:#f00}.hidden{color:#000}.hidden:hover{color:#0f0}</style></head><body><h1>⚠️ 警告：越权访问！</h1><p>你的IP已被记录：""" + _random.choice(["192.168.1.1","10.0.0.1","172.16.0.1"]) + """</p><p>系统已触发警报 🚨</p><br><p class="hidden">开玩笑的 😂 这是给你弟弟的闯关游戏~</p><p class="hidden">试试访问 /hidden-api?token=guest</p></body></html>""")
 
 @app.get("/hidden-api", include_in_schema=False)
 def hidden_api(token: str = None):
     if token == "guest":
-        return {"status": "access granted", "message": "欢迎初级白客", "flag": "FLAG{robots_are_not_your_enemy}", "next_hint": "检查网页源码中的HTML注释"}
+        return {"status": "access granted", "message": "欢迎初级玩家", "flag": "GAME{robots_are_not_your_enemy}", "next_hint": "检查网页源码中的HTML注释"}
     return {"status": "denied", "message": "需要 token 参数", "hint": "试试 ?token=guest"}
 
-# 🕵️ 隐藏的CTF挑战页面
-@app.get("/ctf", include_in_schema=False)
+# 🕵️ 隐藏的ADVENTURE挑战页面
+@app.get("/adventure", include_in_schema=False)
 def ctf_challenge_page():
-    return HTMLResponse(content="""<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\"><title>CTF挑战入口</title>
+    return HTMLResponse(content="""<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"UTF-8\"><title>ADVENTURE挑战入口</title>
 <style>body{background:#0a0e27;color:#0f0;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
 .box{text-align:center;border:1px solid #0f0;padding:40px;border-radius:8px;max-width:600px}
 h1{color:#ff0}h2{color:#f0f}.hint{color:#666;margin-top:20px;font-size:12px}
 a{color:#0ff}</style></head><body><div class=\"box\">
-<h1>🕵️ CTF 挑战入口</h1><p>恭喜你找到了隐藏的挑战页面！</p>
-<p>Flag格式: <code>FLAG{...}</code></p>
+<h1>🕵️ ADVENTURE 挑战入口</h1><p>恭喜你找到了隐藏的挑战页面！</p>
+<p>Flag格式: <code>GAME{...}</code></p>
 <div class=\"hint\">
 <p>📌 第1题: 检查 robots.txt → <a href=\"/robots.txt\">/robots.txt</a></p>
 <p>📌 第2题: 查看此页面源代码 → 右键 → 查看源代码</p>
@@ -1693,26 +1754,26 @@ a{color:#0ff}</style></head><body><div class=\"box\">
 <p>📌 第5题: 访问 <a href=\"/hidden-api?token=guest\">/hidden-api?token=guest</a></p>
 <p>📌 第6题: 访问 <a href=\"/secret-panel\">/secret-panel</a> (假的警告)</p>
 <p>📌 第7题: 访问 <a href=\"/backup.zip\">/backup.zip</a></p>
-<!-- FLAG{source_code_is_your_friend} ← 你看，flag就在源码里！ -->
+<!-- GAME{source_code_is_your_friend} ← 你看，flag就在源码里！ -->
 </div></div></body></html>""")
 
-# 🏆 CTF 排行榜
-@app.get("/api/v1/ctf/leaderboard", include_in_schema=False)
+# 🏆 ADVENTURE 排行榜
+@app.get("/api/v1/adventure/leaderboard", include_in_schema=False)
 def ctf_leaderboard(db: Session = Depends(get_db)):
-    flags = db.query(DBCTFFlag).filter(DBCTFFlag.found_by.isnot(None)).all()
+    flags = db.query(DBADVENTUREFlag).filter(DBADVENTUREFlag.found_by.isnot(None)).all()
     return {"players": [{"name": f.found_by, "title": f.title, "points": f.points, "found_at": f.found_at.strftime("%m/%d %H:%M") if f.found_at else ""} for f in flags]}
-    flags = db.query(DBCTFFlag).filter(DBCTFFlag.found_by.isnot(None)).all()
+    flags = db.query(DBADVENTUREFlag).filter(DBADVENTUREFlag.found_by.isnot(None)).all()
     return {"players": [{"name": f.found_by, "title": f.title, "points": f.points, "found_at": f.found_at.strftime("%m/%d %H:%M") if f.found_at else ""} for f in flags]}
 
 @app.get("/backup.zip", include_in_schema=False)
 def fake_backup():
-    return Response(content="PK\x03\x04\n这不是真的ZIP文件，但是你在正确的方向上！\nFLAG{robots_are_not_your_enemy}\n下一个flag在响应头里", media_type="application/zip")
+    return Response(content="PK\x03\x04\n这不是真的ZIP文件，但是你在正确的方向上！\nGAME{robots_are_not_your_enemy}\n下一个flag在响应头里", media_type="application/zip")
 
-# CTF验证端点
-@app.post("/api/v1/ctf/submit")
+# ADVENTURE验证端点
+@app.post("/api/v1/adventure/submit")
 def ctf_submit(flag: str = Form(...), db: Session = Depends(get_db)):
     _ensure_ctf_seeds(db)
-    found = db.query(DBCTFFlag).filter(DBCTFFlag.flag_key == flag.strip()).first()
+    found = db.query(DBADVENTUREFlag).filter(DBADVENTUREFlag.flag_key == flag.strip()).first()
     if not found:
         return {"status": "wrong", "message": "Flag错误，继续尝试！"}
     if found.found_by:
@@ -1720,14 +1781,14 @@ def ctf_submit(flag: str = Form(...), db: Session = Depends(get_db)):
     found.found_by = "弟弟"
     found.found_at = datetime.now()
     db.commit()
-    total = db.query(DBCTFFlag).filter(DBCTFFlag.found_by.isnot(None)).count()
-    all_count = db.query(DBCTFFlag).count()
+    total = db.query(DBADVENTUREFlag).filter(DBADVENTUREFlag.found_by.isnot(None)).count()
+    all_count = db.query(DBADVENTUREFlag).count()
     return {"status": "success", "title": found.title, "points": found.points, "message": f"🎉 恭喜！{found.title} (+{found.points}分)", "progress": f"{total}/{all_count}"}
 
-@app.get("/api/v1/ctf/status")
+@app.get("/api/v1/adventure/status")
 def ctf_status(db: Session = Depends(get_db)):
     _ensure_ctf_seeds(db)
-    flags = db.query(DBCTFFlag).all()
+    flags = db.query(DBADVENTUREFlag).all()
     found = [f for f in flags if f.found_by]
     return {
         "total": len(flags),
@@ -1737,63 +1798,63 @@ def ctf_status(db: Session = Depends(get_db)):
         "flags": [{"key": f.flag_key[:15]+"...", "title": f.title, "points": f.points, "difficulty": f.difficulty, "found": bool(f.found_by), "found_at": f.found_at.strftime("%m/%d %H:%M") if f.found_at else None} for f in flags]
     }
 
-@app.get("/api/v1/ctf/hint/{flag_key:path}")
+@app.get("/api/v1/adventure/hint/{flag_key:path}")
 def ctf_hint(flag_key: str, db: Session = Depends(get_db)):
-    hints = db.query(DBCTFHint).filter(DBCTFHint.flag_key == flag_key).order_by(DBCTFHint.hint_order).all()
+    hints = db.query(DBADVENTUREHint).filter(DBADVENTUREHint.flag_key == flag_key).order_by(DBADVENTUREHint.hint_order).all()
     if not hints:
         return {"hints": ["这个flag没有额外的提示，靠你自己了！"]}
     return {"hints": [h.hint_text for h in hints]}
 
 
 # ════════════════════════════════════════════════
-# 🕵️ Extra CTF hidden endpoints for 100 challenges
+# 🕵️ Extra ADVENTURE hidden endpoints for 100 challenges
 # ════════════════════════════════════════════════
 
-@app.get("/api/v1/ctf/challenge/{flag_id}", include_in_schema=False)
+@app.get("/api/v1/adventure/challenge/{flag_id}", include_in_schema=False)
 def ctf_challenge_detail(flag_id: str, db: Session = Depends(get_db)):
-    fl = db.query(DBCTFFlag).filter(DBCTFFlag.flag_key == flag_id).first()
+    fl = db.query(DBADVENTUREFlag).filter(DBADVENTUREFlag.flag_key == flag_id).first()
     if not fl: raise HTTPException(status_code=404)
     return {"title": fl.title, "description": fl.description, "points": fl.points, "difficulty": fl.difficulty, "found": bool(fl.found_by)}
 
 # Base64 challenge response
-@app.get("/api/v1/ctf/base64-challenge", include_in_schema=False)
+@app.get("/api/v1/adventure/base64-challenge", include_in_schema=False)
 def ctf_base64():
-    return {"encoded": "Q29uZ3JhdHVsYXRpb25zISBZb3UgZm91bmQgaXQh", "hint": "base64 -d", "flag_format": "FLAG{...}"}
+    return {"encoded": "Q29uZ3JhdHVsYXRpb25zISBZb3UgZm91bmQgaXQh", "hint": "base64 -d", "flag_format": "GAME{...}"}
 
 # XOR challenge endpoint
-@app.get("/api/v1/ctf/xor-challenge", include_in_schema=False)
+@app.get("/api/v1/adventure/xor-challenge", include_in_schema=False)
 def ctf_xor():
     return {"encrypted": "2c0700170b1316591f131f561c0a1c0f561918131e031f570e", "hint": "Single-byte XOR. Key is 0x7a", "key": "0x7a"}
 
 # ROT13 endpoint
-@app.get("/api/v1/ctf/rot13-challenge", include_in_schema=False)
+@app.get("/api/v1/adventure/rot13-challenge", include_in_schema=False)
 def ctf_rot13():
     return {"encoded": "SYNT{sbg13_vf_gur_bevtvany_pelcgb}", "hint": "ROT13 — rotate by 13"}
 
 # Morse challenge
-@app.get("/api/v1/ctf/morse-challenge", include_in_schema=False)
+@app.get("/api/v1/adventure/morse-challenge", include_in_schema=False)
 def ctf_morse():
     return {"morse": "..-. .-.. .- --. -.--. -- --- .-. ... . ..--.- -.-. --- -.. . ..--.- .. ... ..--.- -.-. .-.. .- ... ... .. -.-. -.--.-", "hint": "Morse code decoder online"}
 
 # Vigenere challenge
-@app.get("/api/v1/ctf/vigenere-challenge", include_in_schema=False)
+@app.get("/api/v1/adventure/vigenere-challenge", include_in_schema=False)
 def ctf_vigenere():
     return {"ciphertext": "WFNX{iphertb_fv_phnfprn_wnnqk}", "key": "RIN", "hint": "Vigenere cipher with key 'RIN'"}
 
 # Caesar challenge
-@app.get("/api/v1/ctf/caesar-challenge", include_in_schema=False)
+@app.get("/api/v1/adventure/caesar-challenge", include_in_schema=False)
 def ctf_caesar():
     return {"ciphertext": "WKHENQ_BRFHVDU_BLSKHU_CL_DQFLHQW", "hint": "Shift by 3 (Caesar's favorite)", "shift": 3}
 
 # JWT debug endpoint (shows token but in safe way)
-@app.get("/api/v1/ctf/jwt-debug", include_in_schema=False)
+@app.get("/api/v1/adventure/jwt-debug", include_in_schema=False)
 def ctf_jwt():
     return {"hint": "JWT tokens are in the X-GP-Token header. Grab one and decode it at jwt.io", "structure": "header.payload.signature", "common_attacks": ["none algorithm", "weak HMAC secret", "expired token reuse"]}
 
 # Hidden leaderboard endpoint
-@app.get("/api/v1/ctf/leaderboard", include_in_schema=False)
+@app.get("/api/v1/adventure/leaderboard", include_in_schema=False)
 def ctf_leaderboard(db: Session = Depends(get_db)):
-    flags = db.query(DBCTFFlag).filter(DBCTFFlag.found_by.isnot(None)).all()
+    flags = db.query(DBADVENTUREFlag).filter(DBADVENTUREFlag.found_by.isnot(None)).all()
     if not flags: return {"players": [], "message": "No flags found yet! Be the first!"}
     players = {}
     for fl in flags:
@@ -1802,25 +1863,25 @@ def ctf_leaderboard(db: Session = Depends(get_db)):
         players[fl.found_by]["flags_found"] += 1
     return {"players": sorted(players.values(), key=lambda x: x["total_points"], reverse=True)}
 
-# Fake admin panel (further CTF bait)
+# Fake admin panel (further ADVENTURE bait)
 @app.get("/admin-panel", include_in_schema=False)
 def fake_admin_panel():
     return HTMLResponse(content="""<!DOCTYPE html><html><head><title>Admin Panel</title>
 <style>body{background:#000;color:#0f0;font-family:monospace;padding:40px}h1{color:red}input{padding:8px;margin:5px;border:1px solid #0f0;background:#000;color:#0f0}</style></head><body>
 <h1>⚠️ Restricted Access</h1><p>Username: <input disabled value='admin'></p><p>Password: <input type='password'></p>
-<button onclick="alert('Nice try! This is a CTF training page.\\\\n\\\\nTry the real admin at /admin')">Login</button>
-<!-- FLAG{hidden_in_plain_sight} — sometimes the flag is exactly where you would look -->
-<!-- Next hint: check /api/v1/ctf/leaderboard --></body></html>""")
+<button onclick="alert('Nice try! This is a ADVENTURE training page.\\\\n\\\\nTry the real admin at /admin')">Login</button>
+<!-- GAME{hidden_in_plain_sight} — sometimes the flag is exactly where you would look -->
+<!-- Next hint: check /api/v1/adventure/leaderboard --></body></html>""")
 
 # Old backup endpoint
 @app.get("/backup.tar.gz", include_in_schema=False)
 def fake_tarball():
-    return Response(content="FLAG{backup_files_are_dangerous}\n\nAlways check for common backup file extensions:\n  .bak .old .backup .zip .tar.gz .sql .swp ~\n\nNext: try /.env or /.git/config", media_type="text/plain")
+    return Response(content="GAME{backup_files_are_dangerous}\n\nAlways check for common backup file extensions:\n  .bak .old .backup .zip .tar.gz .sql .swp ~\n\nNext: try /.env or /.git/config", media_type="text/plain")
 
 @app.get("/.env", include_in_schema=False)
 def fake_env():
     return PlainTextResponse("""# Application Environment Config
-# FLAG{env_file_leaked} — NEVER commit .env files!
+# GAME{env_file_leaked} — NEVER commit .env files!
 
 DB_HOST=localhost
 DB_NAME=family_fund
@@ -1834,7 +1895,7 @@ API_TOKEN=not_a_real_token_obviously
 
 @app.get("/.git/HEAD", include_in_schema=False)
 def fake_git():
-    return PlainTextResponse("ref: refs/heads/main\n\nFLAG{git_exposed_dot_git}\n\n.git directories should NEVER be web-accessible!\nUse a proper deployment pipeline instead.\n\nNext: try /Dockerfile")
+    return PlainTextResponse("ref: refs/heads/main\n\nGAME{git_exposed_dot_git}\n\n.git directories should NEVER be web-accessible!\nUse a proper deployment pipeline instead.\n\nNext: try /Dockerfile")
 
 @app.get("/Dockerfile", include_in_schema=False)
 def fake_dockerfile():
@@ -1842,7 +1903,7 @@ def fake_dockerfile():
 WORKDIR /app
 COPY . .
 RUN pip install -r requirements.txt
-# FLAG{dockerfile_tells_the_stack}
+# GAME{dockerfile_tells_the_stack}
 # Always use .dockerignore to exclude sensitive files!
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 EXPOSE 8000
@@ -1850,7 +1911,7 @@ EXPOSE 8000
 """)
 
 # Status endpoint with timing (for timing attack challenge)
-@app.get("/api/v1/ctf/timing-test/{user}", include_in_schema=False)
+@app.get("/api/v1/adventure/timing-test/{user}", include_in_schema=False)
 def ctf_timing(user: str):
     import time as _t
     if user == "admin":
@@ -1859,13 +1920,13 @@ def ctf_timing(user: str):
     _t.sleep(0.01)
     return {"valid": False}
 
-# CTF search API
-@app.get("/api/v1/ctf/search", include_in_schema=False)
+# ADVENTURE search API
+@app.get("/api/v1/adventure/search", include_in_schema=False)
 def ctf_search(q: str = "", difficulty: str = "", category: str = "", db: Session = Depends(get_db)):
     _ensure_ctf_seeds(db)
-    query = db.query(DBCTFFlag)
-    if q: query = query.filter(DBCTFFlag.title.contains(q) | DBCTFFlag.description.contains(q))
-    if difficulty: query = query.filter(DBCTFFlag.difficulty == difficulty)
+    query = db.query(DBADVENTUREFlag)
+    if q: query = query.filter(DBADVENTUREFlag.title.contains(q) | DBADVENTUREFlag.description.contains(q))
+    if difficulty: query = query.filter(DBADVENTUREFlag.difficulty == difficulty)
     flags = query.all()
     return {"results": [{"title": f.title, "points": f.points, "difficulty": f.difficulty, "found": bool(f.found_by), "desc": f.description} for f in flags]}
 

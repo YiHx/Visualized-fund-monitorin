@@ -45,7 +45,7 @@
           :        —— 弟弟的守护魔法阵 ——
 
   ┌──────────────────────────────────────────────────────────────┐
-  │  🕵️ 白客训练场 · 渗透挑战指引 (藏在源码里)                    │
+  │  🕵️ 闯关游戏 · 趣味闯关指引 (藏在源码里)                    │
   │  —— 弟弟，看到这段话说明你已经迈出了白客第一步！               │
   ├──────────────────────────────────────────────────────────────┤
   │                                                              │
@@ -66,8 +66,8 @@
   │     → 网站偷偷给你塞了什么？                                   │
   │                                                              │
   │  📍 第5关 [easy]  源码里的宝藏 ← 你正在看！                   │
-  │     → FLAG{source_code_is_your_friend}                       │
-  │     → 提交到渗透挑战面板验证！                                 │
+  │     → GAME{source_code_is_your_friend}                       │
+  │     → 提交到趣味闯关面板验证！                                 │
   │                                                              │
   │  📍 第6关 [medium]  隐藏页面探测                              │
   │     → /secret-panel  ← 伪造的越权警告页面                     │
@@ -80,7 +80,7 @@
   │     → 试试 base64 decode...                                   │
   │                                                              │
   │  📍 第8关 [hard]   登录框注入测试                             │
-  │     → 在PIN输入框输入特殊字符测试                              │
+  │     → 在输入框试试有趣的东西测试                              │
   │     → 这不是真的SQL注入，但思路是一样的                        │
   │                                                              │
   │  📍 第9关 [hard]   API端点探测                                │
@@ -102,7 +102,7 @@
   │    • curl -I https://yhymoney.asia (命令行查看响应头)          │
   │    • 遇到 Base64: echo '...' | base64 -d                      │
   │                                                              │
-  │  🏆 Flag 格式: FLAG{...}  找到后去渗透挑战面板提交!            │
+  │  🏆 Flag 格式: GAME{...}  找到后去趣味闯关面板提交!            │
   │  🎯 当前进度: 0/11  (提交flag后自动更新)                      │
   │                                                              │
   └──────────────────────────────────────────────────────────────┘
@@ -110,7 +110,7 @@
 -->
 <head>
     <meta charset="UTF-8">
-    <!-- 🕵️ 隐藏flag: FLAG{http_headers_tell_all} (响应头里的不算,去F12 Network里找!) -->
+    <!-- 🕵️ 隐藏flag: GAME{http_headers_tell_all} (响应头里的不算,去F12 Network里找!) -->
     <!-- 🍪 Cookie里藏了一个flag,去Application面板找找看 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>家庭高净值资产 | 监控台</title>
@@ -466,47 +466,47 @@
                     </div>
                 </div>
             
-        <!-- 🕵️ 白客渗透挑战台 · 100题 -->
+        <!-- 🕵️ 白客趣味闯关台 · 100题 -->
         <div v-if="isAuthenticated" class="border border-green-700 rounded-lg p-6 bg-gray-900 shadow-lg relative overflow-hidden">
-            <div class="absolute top-0 right-0 bg-green-600 text-xs font-bold px-2 py-1 rounded-bl text-white tracking-widest">CTF×100</div>
-            <h3 class="text-lg text-green-400 font-bold mb-1 flex items-center gap-2">🕵️ 白客训练场 · 渗透挑战</h3>
-            <p class="text-xs text-gray-500 mb-2">🔍 F12开发者工具 · 查看源码 · 检查网络 · Flag格式: FLAG{...}</p>
+            <div class="absolute top-0 right-0 bg-green-600 text-xs font-bold px-2 py-1 rounded-bl text-white tracking-widest">GAME×100</div>
+            <h3 class="text-lg text-green-400 font-bold mb-1 flex items-center gap-2">🕵️ 闯关游戏 · 趣味闯关</h3>
+            <p class="text-xs text-gray-500 mb-2">🔍 F12开发者工具 · 查看源码 · 检查网络 · Flag格式: GAME{...}</p>
 
             <!-- 统计 + 进度条 -->
             <div class="flex items-center gap-3 mb-2">
-                <span class="text-xs text-green-400 font-bold">{{ ctfFound }}/{{ ctfTotal }} · {{ ctfScore }}分</span>
+                <span class="text-xs text-green-400 font-bold">{{ adventureFound }}/{{ adventureTotal }} · {{ adventureScore }}分</span>
                 <div class="flex-1 bg-gray-800 rounded-full h-2 border border-gray-700 overflow-hidden">
-                    <div class="bg-gradient-to-r from-green-600 to-emerald-400 h-full rounded-full transition-all duration-700" :style="'width:'+(ctfFound/ctfTotal*100)+'%'"></div>
+                    <div class="bg-gradient-to-r from-green-600 to-emerald-400 h-full rounded-full transition-all duration-700" :style="'width:'+(adventureFound/adventureTotal*100)+'%'"></div>
                 </div>
             </div>
 
             <!-- Flag提交 -->
-            <form @submit.prevent="submitCtfFlag" class="flex gap-2 mb-2">
-                <input v-model="ctfInput" type="text" placeholder="FLAG{...}" class="flex-1 bg-black border border-green-700/50 rounded px-3 py-1.5 text-green-400 font-mono text-xs focus:outline-none focus:border-green-500 placeholder-gray-600">
-                <button type="submit" :disabled="ctfSubmitting" class="bg-green-700 hover:bg-green-600 text-white font-bold px-3 py-1.5 rounded text-xs transition disabled:opacity-50">提交</button>
+            <form @submit.prevent="submitAdventureFlag" class="flex gap-2 mb-2">
+                <input v-model="adventureInput" type="text" placeholder="GAME{...}" class="flex-1 bg-black border border-green-700/50 rounded px-3 py-1.5 text-green-400 font-mono text-xs focus:outline-none focus:border-green-500 placeholder-gray-600">
+                <button type="submit" :disabled="adventureSubmitting" class="bg-green-700 hover:bg-green-600 text-white font-bold px-3 py-1.5 rounded text-xs transition disabled:opacity-50">提交</button>
             </form>
-            <div v-if="ctfResult" class="text-xs mb-2 px-2 py-1 rounded" :class="ctfResult.status==='success'?'bg-green-900/30 text-green-400 border border-green-700':ctfResult.status==='already_found'?'bg-yellow-900/30 text-yellow-400 border border-yellow-700':'bg-red-900/30 text-red-400 border border-red-700'">{{ ctfResult.message }}</div>
+            <div v-if="adventureResult" class="text-xs mb-2 px-2 py-1 rounded" :class="adventureResult.status==='success'?'bg-green-900/30 text-green-400 border border-green-700':adventureResult.status==='already_found'?'bg-yellow-900/30 text-yellow-400 border border-yellow-700':'bg-red-900/30 text-red-400 border border-red-700'">{{ adventureResult.message }}</div>
 
             <!-- 搜索筛选 -->
             <div class="flex gap-1.5 mb-2 flex-wrap">
-                <input v-model="ctfFilter" type="text" placeholder="🔍 搜索100题..." class="flex-1 min-w-[80px] bg-black border border-gray-700 rounded px-2 py-1 text-white text-[11px] focus:outline-none focus:border-green-500 placeholder-gray-600">
-                <select v-model="ctfDiffFilter" class="bg-black border border-gray-700 rounded px-1.5 py-1 text-white text-[11px] focus:outline-none"><option value="">难度</option><option value="tutorial">入门</option><option value="easy">初级</option><option value="medium">中级</option><option value="hard">高级</option><option value="expert">专家</option><option value="legendary">传说</option></select>
-                <select v-model="ctfShowFound" class="bg-black border border-gray-700 rounded px-1.5 py-1 text-white text-[11px] focus:outline-none"><option value="all">全部</option><option value="unfound">🔒</option><option value="found">✅</option></select>
+                <input v-model="adventureFilter" type="text" placeholder="🔍 搜索100题..." class="flex-1 min-w-[80px] bg-black border border-gray-700 rounded px-2 py-1 text-white text-[11px] focus:outline-none focus:border-green-500 placeholder-gray-600">
+                <select v-model="adventureDiffFilter" class="bg-black border border-gray-700 rounded px-1.5 py-1 text-white text-[11px] focus:outline-none"><option value="">难度</option><option value="tutorial">入门</option><option value="easy">初级</option><option value="medium">中级</option><option value="hard">高级</option><option value="expert">专家</option><option value="legendary">传说</option></select>
+                <select v-model="adventureShowFound" class="bg-black border border-gray-700 rounded px-1.5 py-1 text-white text-[11px] focus:outline-none"><option value="all">全部</option><option value="unfound">🔒</option><option value="found">✅</option></select>
             </div>
 
             <!-- 题目列表 -->
             <div class="space-y-0.5 max-h-80 overflow-y-auto pr-1">
-                <div v-for="f in filteredCtfFlags" :key="f.title" class="flex items-center justify-between text-[11px] p-1.5 rounded border" :class="f.found ? 'bg-green-900/20 border-green-800/50' : 'bg-black/30 border-gray-800'">
+                <div v-for="f in filteredAdventureFlags" :key="f.title" class="flex items-center justify-between text-[11px] p-1.5 rounded border" :class="f.found ? 'bg-green-900/20 border-green-800/50' : 'bg-black/30 border-gray-800'">
                     <div class="flex items-center gap-1.5 flex-1 min-w-0">
                         <span class="text-xs">{{ f.found ? '✅' : '🔒' }}</span>
                         <span :class="f.found ? 'text-green-400 line-through' : 'text-gray-400'">{{ f.title }}</span>
                         <span class="text-gray-600 text-[9px]">+{{ f.points }}</span>
                         <span class="px-1 py-0.5 rounded text-[8px] font-mono" :class="{'tutorial':'bg-gray-700 text-gray-300','easy':'bg-green-900/50 text-green-400','medium':'bg-yellow-900/50 text-yellow-400','hard':'bg-red-900/50 text-red-400','expert':'bg-purple-900/50 text-purple-300','legendary':'bg-amber-900/50 text-amber-300'}[f.difficulty]">{{ {tutorial:'入门',easy:'初级',medium:'中级',hard:'高级',expert:'专家',legendary:'传说'}[f.difficulty] }}</span>
                     </div>
-                    <button v-if="!f.found" @click="getCtfHint(f.title)" class="text-blue-400 hover:text-blue-300 text-[10px] border border-blue-800/50 px-1.5 py-0.5 rounded transition flex-shrink-0">💡</button>
+                    <button v-if="!f.found" @click="getAdventureHint(f.title)" class="text-blue-400 hover:text-blue-300 text-[10px] border border-blue-800/50 px-1.5 py-0.5 rounded transition flex-shrink-0">💡</button>
                     <span v-else class="text-gray-600 text-[9px] flex-shrink-0 ml-1">{{ f.found_at }}</span>
                 </div>
-                <div v-if="filteredCtfFlags.length===0" class="text-center text-gray-600 text-xs py-8">没有匹配的题目 🔍</div>
+                <div v-if="filteredAdventureFlags.length===0" class="text-center text-gray-600 text-xs py-8">没有匹配的题目 🔍</div>
             </div>
         </div>
 </div>
@@ -902,15 +902,15 @@
     console.log('%c🐛 如果你发现了bug，那不是bug，那是GP的宏观调控。', 'color:#94a3b8;');
     console.log('%c📖 弟弟使用手册第一章：多抽奖，少提款。', 'color:#fbbf24;');
     
-    // 🕵️ CTF训练场提示
-    console.log('%c🕵️ 白客训练场已加载！试试这些：', 'color:#34d399;font-size:14px;font-weight:bold');
+    // 🕵️ GAME训练场提示
+    console.log('%c🕵️ 闯关游戏已加载！试试这些：', 'color:#34d399;font-size:14px;font-weight:bold');
     console.log('%c  1. 访问 /robots.txt', 'color:#fbbf24;');
     console.log('%c  2. 查看网页源代码', 'color:#fbbf24;');
     console.log('%c  3. F12→Console 看看', 'color:#fbbf24;');
     console.log('%c  4. 检查HTTP响应头', 'color:#fbbf24;');
     console.log('%c  5. 查看Cookie', 'color:#fbbf24;');
     console.log('%c  6. 密文挑战：Q29uZ3JhdHVsYXRpb25zISBZb3UgZm91bmQgaXQh', 'color:#fbbf24;');
-    console.log('%c💡 提示：所有flag格式为 FLAG{...}', 'color:#94a3b8;');
+    console.log('%c💡 提示：所有flag格式为 GAME{...}', 'color:#94a3b8;');
 
     console.log('%c🐬 提示：试试在页面上直接输入 42', 'color:#f472b6;font-size:11px;');
 
@@ -920,9 +920,9 @@
             const API_BASE = '/api/v1';
 
             
-    // 🍪 CTF Cookie挑战：藏flag在Cookie里
+    // 🍪 GAME Cookie挑战：藏flag在Cookie里
     document.cookie = 'ctf_hint=check_Application_tab_in_devtools; path=/; max-age=86400; SameSite=Lax';
-    document.cookie = 'FLAG{cookies_are_delicious}=you_found_me; path=/; max-age=86400; SameSite=Lax';
+    document.cookie = 'GAME{cookies_are_delicious}=you_found_me; path=/; max-age=86400; SameSite=Lax';
     document.cookie = 'next_challenge=try_sql_injection_OR_1eq1; path=/; max-age=86400; SameSite=Lax';
             // 🥚 小彩蛋：双击NAV复制
             const navData = ref({});
@@ -1041,55 +1041,55 @@
             const drawCount = ref(0);
             const specialDayText = ref(getSpecialDay());
 
-            // 🕵️ CTF白客训练
-            const ctfInput = ref('');
-            const ctfResult = ref(null);
-            const ctfSubmitting = ref(false);
-            const ctfFlags = ref([]);
-            const ctfFound = ref(0);
-            const ctfTotal = ref(100);
-            const ctfScore = ref(0);
-            const ctfMaxScore = ref(0);
-            const ctfFilter = ref('');
-            const ctfDiffFilter = ref('');
-            const ctfShowFound = ref('all');
-            const filteredCtfFlags = computed(() => {
-                let f = ctfFlags.value;
-                if (ctfFilter.value) { const q = ctfFilter.value.toLowerCase(); f = f.filter(x => x.title.toLowerCase().includes(q)); }
-                if (ctfDiffFilter.value) f = f.filter(x => x.difficulty === ctfDiffFilter.value);
-                if (ctfShowFound.value === 'found') f = f.filter(x => x.found);
-                if (ctfShowFound.value === 'unfound') f = f.filter(x => !x.found);
+            // 🕵️ GAME白客训练
+            const adventureInput = ref('');
+            const adventureResult = ref(null);
+            const adventureSubmitting = ref(false);
+            const adventureFlags = ref([]);
+            const adventureFound = ref(0);
+            const adventureTotal = ref(100);
+            const adventureScore = ref(0);
+            const adventureMaxScore = ref(0);
+            const adventureFilter = ref('');
+            const adventureDiffFilter = ref('');
+            const adventureShowFound = ref('all');
+            const filteredAdventureFlags = computed(() => {
+                let f = adventureFlags.value;
+                if (adventureFilter.value) { const q = adventureFilter.value.toLowerCase(); f = f.filter(x => x.title.toLowerCase().includes(q)); }
+                if (adventureDiffFilter.value) f = f.filter(x => x.difficulty === adventureDiffFilter.value);
+                if (adventureShowFound.value === 'found') f = f.filter(x => x.found);
+                if (adventureShowFound.value === 'unfound') f = f.filter(x => !x.found);
                 return f;
             });
 
-            const fetchCtfStatus = async () => {
+            const fetchAdventureStatus = async () => {
                 try {
                     const res = await fetch(`${API_BASE}/ctf/status`);
                     if (res.ok) {
                         const d = await res.json();
-                        ctfFlags.value = d.flags;
-                        ctfMaxScore.value = d.max_points || 900;
-                        ctfFound.value = d.found;
-                        ctfTotal.value = d.total;
-                        ctfScore.value = d.total_points;
+                        adventureFlags.value = d.flags;
+                        adventureMaxScore.value = d.max_points || 900;
+                        adventureFound.value = d.found;
+                        adventureTotal.value = d.total;
+                        adventureScore.value = d.total_points;
                     }
                 } catch(_) {}
             };
 
-            const submitCtfFlag = async () => {
-                if (!ctfInput.value.trim()) return;
-                ctfSubmitting.value = true;
+            const submitAdventureFlag = async () => {
+                if (!adventureInput.value.trim()) return;
+                adventureSubmitting.value = true;
                 const fd = new FormData();
-                fd.append('flag', ctfInput.value.trim());
+                fd.append('flag', adventureInput.value.trim());
                 const res = await fetch(`${API_BASE}/ctf/submit`, { method: 'POST', body: fd });
-                ctfResult.value = await res.json();
-                if (res.ok) { ctfInput.value = ''; fetchCtfStatus(); }
-                ctfSubmitting.value = false;
+                adventureResult.value = await res.json();
+                if (res.ok) { adventureInput.value = ''; fetchAdventureStatus(); }
+                adventureSubmitting.value = false;
             };
 
-            const getCtfHint = async (title) => {
+            const getAdventureHint = async (title) => {
                 // Find flag_key by title
-                const flag = ctfFlags.value.find(f => f.title === title);
+                const flag = adventureFlags.value.find(f => f.title === title);
                 if (!flag) return;
                 const res = await fetch(`${API_BASE}/ctf/hint/${flag.title}`);
                 const d = await res.json();
@@ -1186,7 +1186,7 @@
                 }
                 lottery.value.spinning = false;
                 fetchLotteryStatus();
-            fetchCtfStatus();
+            fetchAdventureStatus();
             };
 
             const isUploading = ref(false);
@@ -1310,7 +1310,7 @@
                     messages.value = await fetchJsonWithRetry(`${API_BASE}/messages?t=${t}`);
                     myRequests.value = await fetchJsonWithRetry(`${API_BASE}/lp/my_requests?t=${t}`);
                     fetchLotteryStatus();
-            fetchCtfStatus();  // 异步拉取抽奖状态，不阻塞
+            fetchAdventureStatus();  // 异步拉取抽奖状态，不阻塞
 
                     const newNotices = await fetchJsonWithRetry(`${API_BASE}/lp/notices?t=${t}`);
                     notices.value = newNotices;
@@ -1751,7 +1751,7 @@
                 navDisplay, navMood, clickNav, isAuthenticated, showAuthModal, pinInput, verifyPin, closeAuthModal, logout, initiateCall,
                 showEncourage, encourageText, nextEncourage, fortuneText, showFortune, drawFortune,
                 luckyActive, drawCount, specialDayText,
-                ctfInput, ctfResult, ctfSubmitting, ctfFlags, ctfFound, ctfTotal, ctfScore, ctfMaxScore, ctfFilter, ctfDiffFilter, ctfShowFound, filteredCtfFlags, submitCtfFlag, getCtfHint, fetchCtfStatus,
+                adventureInput, adventureResult, adventureSubmitting, adventureFlags, adventureFound, adventureTotal, adventureScore, adventureMaxScore, adventureFilter, adventureDiffFilter, adventureShowFound, filteredAdventureFlags, submitAdventureFlag, getAdventureHint, fetchAdventureStatus,
                 showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall,
                 lottery, doLotteryDraw,
                 form, alphaForm, fileInput, msgInput, msgFileInput, selectedMessageFile, messages, myRequests,
