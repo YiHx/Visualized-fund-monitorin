@@ -548,56 +548,61 @@ def _parse_cose_key(cose_bytes: bytes) -> dict:
         return arg
     return _read_cbor()
 
-def _webauthn_verify_assertion(credential_id: str, authenticator_data: bytes, client_data_json_b64: str, signature_b64: str) -> bool:
+def _webauthn_verify_assertion(credential_id: str, authenticator_data_b64: str, client_data_json_b64: str, signature_b64: str) -> bool:
     """验证 WebAuthn assertion 签名"""
     global SessionLocal
     db = SessionLocal()
     try:
         rec = db.query(DBWebAuthnCred).filter(DBWebAuthnCred.credential_id == credential_id).first()
         if not rec:
-            print(f"WebAuthn: credential {credential_id[:20]}... not found")
+            print(f"WebAuthn: credential not found in DB")
             return False
 
-        # ⚠️ 关键：前端传的是 base64url 编码的 clientDataJSON，必须先解码
+        # 解码所有 base64url 参数
+        authenticator_data = _b64_decode(authenticator_data_b64)
         client_json_raw = _b64_decode(client_data_json_b64)
+        sig = _b64_decode(signature_b64)
+
+        # SHA256(clientDataJSON)
         client_hash = _hashlib.sha256(client_json_raw).digest()
         signed_data = authenticator_data + client_hash
 
-        # 验证 RP ID hash（authenticator_data 前32字节）
-        rp_id_hash = authenticator_data[:32]
-        expected_rp = _hashlib.sha256(b"8.209.219.82").digest()
-        # RP ID 可能是域名或 localhost，用常见值尝试匹配
-        valid_rp = False
-        for rp_candidate in [b"8.209.219.82", b"localhost", b"127.0.0.1", b"family-fund"]:
-            if rp_id_hash == _hashlib.sha256(rp_candidate).digest():
-                valid_rp = True
-                break
-        if not valid_rp:
-            print(f"WebAuthn: RP ID hash mismatch. Got {rp_id_hash.hex()}, expected 8.209.219.82={_hashlib.sha256(b'8.209.219.82').hexdigest()}")
-
-        # 解析签名
-        sig = _b64_decode(signature_b64)
-        if len(sig) < 8:
-            print(f"WebAuthn: signature too short ({len(sig)} bytes)")
-            return False
-
-        # ECDSA 签名是 raw r||s 格式（WebAuthn 标准规范）
-        half = len(sig) // 2
-        sig_r = int.from_bytes(sig[:half], 'big')
-        sig_s = int.from_bytes(sig[half:], 'big')
-
-        # 重建公钥并验证
+        # 重建公钥
         x_bytes = bytes.fromhex(rec.public_key_x)
         y_bytes = bytes.fromhex(rec.public_key_y)
         from cryptography.hazmat.primitives.asymmetric import ec
         from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature, encode_dss_signature
+
         pub_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), b'\x04' + x_bytes + y_bytes)
-        from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
-        der_sig = encode_dss_signature(sig_r, sig_s)
+
+        # WebAuthn ES256 签名是 ASN.1 DER 编码
+        # DER格式: 0x30 len 0x02 r_len r_bytes 0x02 s_len s_bytes
+        # 先检查是否是 raw 格式（64字节 = 两个32字节整数）
+        if len(sig) == 64:
+            sig_r = int.from_bytes(sig[:32], 'big')
+            sig_s = int.from_bytes(sig[32:], 'big')
+            der_sig = encode_dss_signature(sig_r, sig_s)
+        elif len(sig) >= 68 and sig[0] == 0x30:
+            # 已经是 DER 格式，直接使用
+            r_len = sig[3]
+            r_start = 4
+            r_end = r_start + r_len
+            s_start = r_end + 2  # skip 0x02 tag
+            s_len = sig[r_end + 1]
+            s_end = s_start + s_len
+            sig_r = int.from_bytes(sig[r_start:r_end], 'big')
+            sig_s = int.from_bytes(sig[s_start:s_end], 'big')
+            der_sig = encode_dss_signature(sig_r, sig_s)
+        else:
+            print(f"WebAuthn: unknown signature format, len={len(sig)}, first_bytes={sig[:4].hex()}")
+            return False
+
         pub_key.verify(der_sig, signed_data, ec.ECDSA(hashes.SHA256()))
         return True
     except Exception as e:
-        print(f"WebAuthn verify error: {e}")
+        print(f"WebAuthn verify error: {type(e).__name__}: {e}")
+        import traceback; traceback.print_exc()
         return False
     finally:
         db.close()
@@ -652,8 +657,7 @@ async def gp_webauthn_auth(request: Request, db: Session = Depends(get_db)):
     if not all([credential_id, authenticator_data_b64, client_data_json, signature_b64]):
         raise HTTPException(status_code=400, detail="缺少认证参数")
 
-    auth_data = _b64_decode(authenticator_data_b64)
-    ok = _webauthn_verify_assertion(credential_id, auth_data, client_data_json, signature_b64)
+    ok = _webauthn_verify_assertion(credential_id, authenticator_data_b64, client_data_json, signature_b64)
     if not ok:
         raise HTTPException(status_code=403, detail="指纹验证失败，请重试或使用PIN登录")
 
