@@ -1,4 +1,50 @@
 from fastapi import FastAPI, HTTPException, Depends, File, UploadFile, Form, status, WebSocket, WebSocketDisconnect, Header, Request
+
+# ╔══════════════════════════════════════════════════════════════════╗
+# ║    家庭高净值资产控制系统  v2.5                                  ║
+# ║    Family High-Net-Worth Asset Control System                   ║
+# ║    Backend: FastAPI + SQLAlchemy + SQLite                       ║
+# ║    Powered by 远坂凛 の 宝石魔術 ✨                              ║
+# ╚══════════════════════════════════════════════════════════════════╝
+#
+# 　　　　 ∧＿∧
+# 　　　（｀・ω・´）  「弟の資産は私が守る！」
+# 　　 （つ　　⊂）　　   ── 遠坂 凛 ──
+# 　　 と＿)_) ＿)
+#
+#   (•_•)      「このコード、完璧ね」
+#   ( •_•)>⌐■-■   "This code... is perfect."
+#   (⌐■_■)
+#
+#   ★ 宝石剑Zelretch™ · NAV自动守护 ★
+#   ～ ビリビリ ビリビリ BILIBILI (゜-゜)つロ 乾杯~ ～
+#
+#   Architecture:
+#   ┌──────────┐    ┌──────────┐    ┌──────────┐
+#   │ dashboard │◄──►│  FastAPI  │◄──►│  SQLite   │
+#   │  (弟弟)   │    │  (凛守护) │    │  (宝石)   │
+#   └──────────┘    └──────────┘    └──────────┘
+#         ▲               ▲               ▲
+#         │               │               │
+#         ▼               ▼               ▼
+#   ┌──────────┐    指 紋 認 証    🔐 GP 后台密码保护
+#   │  admin    │    (Touch ID)     Yhx2582413!@
+#   │  (哥哥)   │
+#   └──────────┘
+#
+#   令咒 Command Spells:
+#   💎 /api/v1/dashboard        — NAV计算
+#   💎 /api/v1/lp/lottery_draw  — 抽奖引擎
+#   💎 /api/v1/gp/lottery_config — GP配置
+#   💎 /api/v1/gp/verify        — GP身份验证
+#   💎 /ws/video_call/...       — 视频通话
+#
+#   Developer Notes:
+#   このシステムは遠坂凛の宝石魔術によって守られています
+#   (This system is protected by Tohsaka Rin's Jewel Magecraft)
+#
+#   BILIBILI (゜-゜)つロ 乾杯~ ∽∽∽
+#
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
