@@ -275,6 +275,86 @@
                 </button>
             </div>
 
+
+            <!-- 🎰 博彩系统控制台 -->
+            <div class="bg-purple-900/20 p-6 rounded-lg border border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.15)] relative overflow-hidden">
+                <div class="absolute top-0 right-0 bg-purple-600 text-xs font-bold px-2 py-1 rounded-bl text-white tracking-widest">CASINO</div>
+                <h2 class="font-bold text-purple-400 mb-4">🎰 博彩系统控制台</h2>
+
+                <!-- 系统设置 -->
+                <div class="bg-black/50 p-3 rounded border border-purple-800/50 mb-3">
+                    <div class="flex items-center justify-between gap-2 mb-2">
+                        <span class="text-xs text-gray-400">系统开关</span>
+                        <button @click="lotteryToggleEnabled" class="text-xs font-bold px-3 py-1 rounded border transition" :class="lottoConfig.enabled ? 'bg-emerald-900/40 border-emerald-600 text-emerald-400' : 'bg-red-900/40 border-red-600 text-red-400'">
+                            {{ lottoConfig.enabled ? '🟢 开启' : '🔴 关闭' }}
+                        </button>
+                    </div>
+                    <form @submit.prevent="lotteryUpdateCost" class="flex gap-2 items-center">
+                        <span class="text-xs text-gray-400 whitespace-nowrap">单次费用</span>
+                        <input v-model="lottoConfig.cost" type="number" step="0.01" min="0.01" class="flex-1 bg-black border border-purple-700/50 rounded p-1 text-white text-sm text-center focus:outline-none focus:border-purple-500">
+                        <button type="submit" class="bg-purple-700 hover:bg-purple-600 text-white text-xs font-bold px-3 py-1 rounded transition">更新</button>
+                    </form>
+                </div>
+
+                <!-- 奖品列表 -->
+                <div class="bg-black/50 p-3 rounded border border-purple-800/50 mb-3">
+                    <div class="text-xs text-purple-400 font-bold mb-2">🏆 奖品配置</div>
+                    <div class="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                        <div v-for="p in lottoConfig.prizes" :key="p.id" class="flex items-center justify-between bg-black/70 p-1.5 rounded border text-xs" :class="p.is_active ? 'border-gray-700' : 'border-red-900/50 opacity-50'">
+                            <div class="flex items-center gap-1.5 flex-1 min-w-0">
+                                <span class="text-sm">{{ p.icon }}</span>
+                                <span class="text-gray-300 truncate max-w-[90px]" :title="p.name">{{ p.name }}</span>
+                                <span class="text-gray-500">(权重{{ p.weight }})</span>
+                            </div>
+                            <div class="flex gap-1">
+                                <button @click="lotteryTogglePrize(p)" class="text-xs px-2 py-0.5 rounded border" :class="p.is_active ? 'border-gray-600 text-gray-400 hover:bg-gray-800' : 'border-red-700 text-red-400 hover:bg-red-900/40'" :title="p.is_active ? '停用' : '启用'">{{ p.is_active ? '⏸' : '▶' }}</button>
+                                <button @click="lotteryDeletePrize(p)" class="text-xs px-2 py-0.5 rounded border border-red-800/50 text-red-400 hover:bg-red-900/40">✕</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 添加新奖品 -->
+                    <form @submit.prevent="lotteryAddPrize" class="mt-2 flex gap-1 items-end flex-wrap">
+                        <input v-model="lottoForm.name" placeholder="名称" class="w-28 bg-black border border-gray-700 rounded p-1 text-white text-xs focus:outline-none focus:border-purple-500">
+                        <select v-model="lottoForm.type" class="bg-black border border-gray-700 rounded p-1 text-white text-xs focus:outline-none">
+                            <option value="CASH">现金</option>
+                            <option value="MULTIPLIER">倍率</option>
+                            <option value="NOTHING">无奖</option>
+                            <option value="SPECIAL">特殊</option>
+                        </select>
+                        <input v-model="lottoForm.value" type="number" step="0.1" placeholder="价值" class="w-16 bg-black border border-gray-700 rounded p-1 text-white text-xs focus:outline-none focus:border-purple-500">
+                        <input v-model="lottoForm.weight" type="number" placeholder="权重" class="w-14 bg-black border border-gray-700 rounded p-1 text-white text-xs focus:outline-none focus:border-purple-500">
+                        <button type="submit" class="bg-purple-700 hover:bg-purple-600 text-white text-xs font-bold px-3 py-1 rounded transition">+添加</button>
+                    </form>
+                </div>
+
+                <!-- 数据统计 -->
+                <div class="bg-black/50 p-3 rounded border border-purple-800/50 mb-3">
+                    <div class="text-xs text-purple-400 font-bold mb-2">📊 数据统计</div>
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                        <div class="bg-black/70 p-2 rounded"><span class="text-gray-500">总抽奖</span><br><span class="text-white font-mono">{{ lottoStats.total_draws }}次</span></div>
+                        <div class="bg-black/70 p-2 rounded"><span class="text-gray-500">总花费</span><br><span class="text-white font-mono">¥{{ lottoStats.total_cost }}</span></div>
+                        <div class="bg-black/70 p-2 rounded"><span class="text-gray-500">总赔付</span><br><span class="text-white font-mono">¥{{ lottoStats.total_payout }}</span></div>
+                        <div class="bg-black/70 p-2 rounded"><span class="text-gray-500">盈利率</span><br><span class="font-mono" :class="lottoStats.profit_rate >= 0 ? 'text-emerald-400' : 'text-red-400'">{{ lottoStats.profit_rate }}%</span></div>
+                    </div>
+                    <div class="flex gap-2 mt-2">
+                        <button @click="fetchLottoStats" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white text-xs py-1 rounded transition">🔄 刷新</button>
+                        <button @click="lotteryResetRecords" class="flex-1 border border-red-800/50 text-red-400 hover:bg-red-900/40 text-xs py-1 rounded transition">🗑 清空记录</button>
+                    </div>
+                </div>
+
+                <!-- 最近记录 -->
+                <div v-if="lottoStats.recent && lottoStats.recent.length > 0" class="bg-black/50 p-3 rounded border border-purple-800/50">
+                    <div class="text-xs text-purple-400 font-bold mb-2">📋 最近抽奖</div>
+                    <div class="space-y-1 max-h-30 overflow-y-auto">
+                        <div v-for="r in lottoStats.recent" :key="r.id" class="flex justify-between items-center text-[10px] bg-black/70 p-1 rounded">
+                            <span :class="r.result_type === 'JACKPOT' ? 'text-yellow-400' : r.result_type === 'WIN' ? 'text-emerald-400' : 'text-gray-500'">{{ r.draw_time }} {{ r.prize_name }}</span>
+                            <span class="text-gray-400">¥{{ r.cost }}→¥{{ r.prize_value }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 </div>
@@ -550,6 +630,83 @@
                 }
             };
 
+
+            // 🎰 博彩管理状态
+            const lottoConfig = ref({ enabled: true, cost: 5, prizes: [] });
+            const lottoStats = ref({ total_draws: 0, total_cost: 0, total_payout: 0, net_profit: 0, profit_rate: 0, wins: 0, jackpots: 0, loses: 0, recent: [] });
+            const lottoForm = ref({ name: '', type: 'CASH', value: '0', weight: '10' });
+
+            const fetchLottoConfig = async () => {
+                try {
+                    const res = await fetch(`${API_BASE}/gp/lottery_config`, { headers: { 'X-GP-Token': gpToken } });
+                    if (res.status === 403) { logout(); return; }
+                    if (res.ok) lottoConfig.value = await res.json();
+                } catch(e) {}
+            };
+
+            const fetchLottoStats = async () => {
+                try {
+                    const res = await fetch(`${API_BASE}/gp/lottery_stats`, { headers: { 'X-GP-Token': gpToken } });
+                    if (res.status === 403) { logout(); return; }
+                    if (res.ok) lottoStats.value = await res.json();
+                } catch(e) {}
+            };
+
+            const lotteryUpdateCost = async () => {
+                const fd = new FormData();
+                fd.append('cost', lottoConfig.value.cost);
+                const res = await fetch(`${API_BASE}/gp/lottery_config`, { method: 'POST', body: fd, headers: { 'X-GP-Token': gpToken } });
+                if (res.status === 403) { logout(); return; }
+                if (res.ok) { alert('博彩费用已更新'); fetchLottoConfig(); }
+            };
+
+            const lotteryToggleEnabled = async () => {
+                const fd = new FormData();
+                fd.append('enabled', lottoConfig.value.enabled ? '0' : '1');
+                const res = await fetch(`${API_BASE}/gp/lottery_config`, { method: 'POST', body: fd, headers: { 'X-GP-Token': gpToken } });
+                if (res.status === 403) { logout(); return; }
+                if (res.ok) { lottoConfig.value.enabled = !lottoConfig.value.enabled; fetchLottoConfig(); }
+            };
+
+            const lotteryTogglePrize = async (prize) => {
+                const fd = new FormData();
+                fd.append('action', 'toggle');
+                fd.append('prize_id', prize.id);
+                const res = await fetch(`${API_BASE}/gp/lottery_config`, { method: 'POST', body: fd, headers: { 'X-GP-Token': gpToken } });
+                if (res.status === 403) { logout(); return; }
+                if (res.ok) fetchLottoConfig();
+            };
+
+            const lotteryDeletePrize = async (prize) => {
+                if (!confirm(`确定删除奖品 [${prize.name}] 吗？`)) return;
+                const fd = new FormData();
+                fd.append('action', 'delete');
+                fd.append('prize_id', prize.id);
+                const res = await fetch(`${API_BASE}/gp/lottery_config`, { method: 'POST', body: fd, headers: { 'X-GP-Token': gpToken } });
+                if (res.status === 403) { logout(); return; }
+                if (res.ok) fetchLottoConfig();
+            };
+
+            const lotteryAddPrize = async () => {
+                if (!lottoForm.value.name) { alert('请输入奖品名称'); return; }
+                const fd = new FormData();
+                fd.append('action', 'add');
+                fd.append('prize_name', lottoForm.value.name);
+                fd.append('prize_type', lottoForm.value.type);
+                fd.append('prize_value', lottoForm.value.value || '0');
+                fd.append('prize_weight', lottoForm.value.weight || '10');
+                fd.append('prize_icon', '🎁');
+                const res = await fetch(`${API_BASE}/gp/lottery_config`, { method: 'POST', body: fd, headers: { 'X-GP-Token': gpToken } });
+                if (res.status === 403) { logout(); return; }
+                if (res.ok) { lottoForm.value = { name: '', type: 'CASH', value: '0', weight: '10' }; fetchLottoConfig(); }
+            };
+
+            const lotteryResetRecords = async () => {
+                if (!confirm('确定清空所有抽奖记录吗？（奖品配置会保留）')) return;
+                const res = await fetch(`${API_BASE}/gp/lottery_reset`, { method: 'POST', headers: { 'X-GP-Token': gpToken } });
+                if (res.status === 403) { logout(); return; }
+                if (res.ok) { alert('记录已清空'); fetchLottoStats(); }
+            };
             const POLL_VISIBLE_MS = 4000;
             const POLL_HIDDEN_MS = 15000;
             const FETCH_TIMEOUT_MS = 8000;
@@ -678,6 +835,10 @@
                             if (callRes.has_call) incomingCall.value = { call_id: callRes.call_id, seconds_left: callRes.seconds_left, status: callRes.status };
                         } catch(_) {}
                     }
+
+                    // 7. 拉取博彩配置和统计（不阻塞主流程）
+                    fetchLottoConfig();
+                    fetchLottoStats();
                 } catch(e) {
                     ok = false;
                     if (e.status === 403) { logout(); return false; }
@@ -846,7 +1007,7 @@
                 document.removeEventListener('visibilitychange', restartPolling);
                 if (recoveredBannerTimer) clearTimeout(recoveredBannerTimer);
             });
-            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, notificationLogs, onlyFailedLogs, retryingLogId, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, retryNotification, replyMsg, isImageFileAdmin, isVideoFileAdmin, openMediaModalAdmin, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown, isAuthenticated, pinInput, authError, authLoading, verifyPin, logout, incomingCall, showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall, acceptIncomingCall, declineIncomingCall }
+            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, notificationLogs, onlyFailedLogs, retryingLogId, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, retryNotification, replyMsg, isImageFileAdmin, isVideoFileAdmin, openMediaModalAdmin, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown, isAuthenticated, pinInput, authError, authLoading, verifyPin, logout, incomingCall, showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall, acceptIncomingCall, declineIncomingCall, lottoConfig, lottoStats, lottoForm, fetchLottoConfig, fetchLottoStats, lotteryUpdateCost, lotteryToggleEnabled, lotteryTogglePrize, lotteryDeletePrize, lotteryAddPrize, lotteryResetRecords }
         }
     }).mount('#admin-app')
 </script>

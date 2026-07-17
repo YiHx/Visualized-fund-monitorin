@@ -221,6 +221,90 @@
             </div>
         </div>
 
+
+
+        <!-- 🎰 趣味博彩抽奖厅 -->
+        <div v-if="lottery.enabled !== false" class="border border-purple-700 rounded-lg p-6 bg-gray-900 shadow-lg relative overflow-hidden">
+            <div class="absolute top-0 right-0 bg-purple-600 text-xs font-bold px-2 py-1 rounded-bl text-white tracking-wider">LOTTERY</div>
+            <h3 class="text-lg text-purple-400 font-bold mb-4 flex items-center">🎰 趣味博彩抽奖厅</h3>
+
+            <!-- 未抽奖状态 -->
+            <div v-if="!lottery.drawing && !lottery.result" class="space-y-4">
+                <!-- 信息栏 -->
+                <div class="grid grid-cols-2 gap-3 text-sm">
+                    <div class="bg-black p-3 rounded text-center border border-purple-800/50">
+                        <div class="text-gray-400 text-xs">单次抽奖</div>
+                        <div class="text-purple-400 font-mono font-bold text-lg">¥{{ lottery.cost || '5.00' }}</div>
+                    </div>
+                    <div class="bg-black p-3 rounded text-center border border-purple-800/50">
+                        <div class="text-gray-400 text-xs">当前余额</div>
+                        <div class="text-emerald-400 font-mono font-bold text-lg">¥{{ lottery.current_nav || '0.00' }}</div>
+                    </div>
+                </div>
+
+                <!-- 奖品预览 -->
+                <div class="bg-black/80 p-3 rounded border border-gray-800">
+                    <div class="text-xs text-gray-500 mb-2">🏆 奖池预览</div>
+                    <div class="flex flex-wrap gap-2">
+                        <span v-for="p in lottery.prizes" :key="p.id" class="text-xs bg-purple-900/40 border border-purple-800/50 px-2 py-1 rounded text-gray-300">{{ p.icon }} {{ p.name.replace(p.icon+' ','') }} <span class="text-purple-400">(权重{{ p.weight }})</span></span>
+                    </div>
+                </div>
+
+                <!-- 抽奖按钮 -->
+                <button @click="doLotteryDraw" :disabled="lottery.spinning || !lottery.can_play"
+                    class="w-full bg-purple-700 hover:bg-purple-600 disabled:bg-gray-800 disabled:text-gray-500 text-white font-bold py-4 rounded-lg transition text-lg tracking-wider shadow-lg">
+                    {{ lottery.can_play ? '🎲 立即抽奖' : (lottery.enabled === false ? '⏸️ 系统维护中' : '💸 余额不足') }}
+                </button>
+            </div>
+
+            <!-- 抽奖动画中 -->
+            <div v-if="lottery.drawing" class="space-y-4">
+                <div class="bg-black p-6 rounded-lg border border-purple-800 text-center">
+                    <div class="text-5xl mb-4 animate-bounce">{{ lottery.slotDisplay || '🎰' }}</div>
+                    <div class="text-purple-400 font-bold text-lg animate-pulse">抽奖中...</div>
+                    <div class="flex justify-center space-x-1 mt-4">
+                        <span class="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style="animation-delay:0s"></span>
+                        <span class="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style="animation-delay:0.15s"></span>
+                        <span class="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style="animation-delay:0.3s"></span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 抽奖结果 -->
+            <div v-if="lottery.result" class="space-y-4" :class="lottery.resultType === 'JACKPOT' ? 'animate-bounce' : ''">
+                <div class="p-5 rounded-lg text-center border-2" :class="lottery.resultType === 'JACKPOT' ? 'bg-yellow-900/40 border-yellow-400 shadow-[0_0_30px_rgba(250,204,21,0.4)]' : lottery.resultType === 'WIN' ? 'bg-emerald-900/30 border-emerald-500' : 'bg-gray-800 border-gray-600'">
+                    <div class="text-5xl mb-3">{{ lottery.resultIcon || '🎁' }}</div>
+                    <div class="text-2xl font-bold mb-2" :class="lottery.resultType === 'JACKPOT' ? 'text-yellow-400' : lottery.resultType === 'WIN' ? 'text-emerald-400' : 'text-gray-400'">
+                        {{ lottery.resultType === 'JACKPOT' ? '🎉 头奖！！！' : lottery.resultType === 'WIN' ? '🎊 中奖！' : '💨 谢谢参与' }}
+                    </div>
+                    <div class="text-white font-bold text-lg">{{ lottery.resultName }}</div>
+                    <div v-if="lottery.resultValue > 0" class="mt-2 text-lg" :class="lottery.resultType === 'JACKPOT' ? 'text-yellow-400 font-bold' : 'text-emerald-400'">
+                        +¥{{ lottery.resultValue.toFixed(2) }}
+                    </div>
+                    <div class="text-gray-400 text-sm mt-3">{{ lottery.resultMessage }}</div>
+                    <div class="text-gray-500 text-xs mt-2">新净值：¥{{ lottery.newNav || '--' }}</div>
+                </div>
+                <button @click="lottery.result = null" class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-lg transition">再来一次</button>
+            </div>
+        </div>
+
+        <!-- 📋 抽奖记录面板 -->
+        <div v-if="lottery.recent_records && lottery.recent_records.length > 0" class="border border-gray-700 rounded-lg p-6 bg-gray-900 shadow-inner">
+            <h3 class="text-lg text-purple-400 font-bold mb-3 flex items-center">📋 近期抽奖记录</h3>
+            <div class="space-y-2 max-h-48 overflow-y-auto">
+                <div v-for="r in lottery.recent_records" :key="r.id" class="flex justify-between items-center bg-black p-2 rounded border border-gray-800 text-sm">
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs w-8" :class="r.result_type === 'JACKPOT' ? 'text-yellow-400' : r.result_type === 'WIN' ? 'text-emerald-400' : 'text-gray-500'">{{ r.result_type === 'JACKPOT' ? '🏆' : r.result_type === 'WIN' ? '✅' : '❌' }}</span>
+                        <span class="text-gray-300 truncate max-w-[120px]">{{ r.prize_name }}</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-gray-500 text-xs">{{ r.draw_time }}</span>
+                        <span class="text-xs">花费 ¥{{ r.cost }}</span>
+                        <span v-if="r.prize_value > 0" class="text-xs text-emerald-400 font-mono">+¥{{ r.prize_value.toFixed(2) }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div class="border border-gray-700 rounded-lg p-6 bg-gray-900 shadow-inner">
             <h3 class="text-lg text-yellow-500 font-bold mb-4 flex items-center">💬 留言板（支持图片/视频）</h3>
             <form @submit.prevent="submitMessage" class="mb-6 space-y-3">
@@ -297,6 +381,67 @@
             const messages = ref([]);
             const myRequests = ref([]);
             const notices = ref([]);
+
+            // 🎰 博彩状态
+            const lottery = ref({ enabled: true, cost: 5, current_nav: 0, can_play: false, prizes: [], recent_records: [], drawing: false, spinning: false, slotDisplay: '🎰', result: null, resultType: '', resultName: '', resultIcon: '', resultValue: 0, resultMessage: '', newNav: 0 });
+
+            const fetchLotteryStatus = async () => {
+                try {
+                    const res = await fetch(`${API_BASE}/lp/lottery_status`);
+                    if (res.ok) {
+                        const d = await res.json();
+                        // 保留当前动画状态，只更新基础数据
+                        lottery.value.enabled = d.enabled;
+                        lottery.value.cost = d.cost;
+                        lottery.value.current_nav = d.current_nav;
+                        lottery.value.can_play = d.can_play;
+                        lottery.value.prizes = d.prizes;
+                        lottery.value.recent_records = d.recent_records;
+                    }
+                } catch(e) {}
+            };
+
+            const doLotteryDraw = async () => {
+                if (lottery.value.spinning) return;
+                lottery.value.spinning = true;
+                lottery.value.drawing = true;
+                lottery.value.result = null;
+
+                // 滚动动画
+                const icons = lottery.value.prizes.map(p => p.icon).filter(Boolean);
+                let animCount = 0;
+                const animInterval = setInterval(() => {
+                    lottery.value.slotDisplay = icons[Math.floor(Math.random() * icons.length)] || '🎰';
+                    animCount++;
+                    if (animCount > 12) clearInterval(animInterval);
+                }, 100);
+
+                try {
+                    const res = await fetch(`${API_BASE}/lp/lottery_draw`, { method: 'POST' });
+                    const d = await res.json();
+                    clearInterval(animInterval);
+                    lottery.value.drawing = false;
+                    if (d.status === 'success') {
+                        lottery.value.slotDisplay = d.prize_icon || '🎁';
+                        lottery.value.result = true;
+                        lottery.value.resultType = d.result_type;
+                        lottery.value.resultName = d.prize_name;
+                        lottery.value.resultIcon = d.prize_icon;
+                        lottery.value.resultValue = d.prize_value;
+                        lottery.value.resultMessage = d.message;
+                        lottery.value.newNav = d.new_nav;
+                        // 同步更新 NAV 显示
+                        if (d.new_nav) navData.value.R_total = d.new_nav;
+                    } else {
+                        alert(d.detail || '抽奖失败');
+                    }
+                } catch(e) {
+                    lottery.value.drawing = false;
+                    alert('抽奖请求失败，请检查网络');
+                }
+                lottery.value.spinning = false;
+                fetchLotteryStatus();
+            };
 
             const isUploading = ref(false);
             const isSubmitting = ref(false);
@@ -416,7 +561,8 @@
                     limitStatus.value = await fetchJsonWithRetry(`${API_BASE}/lp/limit_status?t=${t}`);
                     messages.value = await fetchJsonWithRetry(`${API_BASE}/messages?t=${t}`);
                     myRequests.value = await fetchJsonWithRetry(`${API_BASE}/lp/my_requests?t=${t}`);
-                    
+                    fetchLotteryStatus();  // 异步拉取博彩状态，不阻塞
+
                     const newNotices = await fetchJsonWithRetry(`${API_BASE}/lp/notices?t=${t}`);
                     notices.value = newNotices;
                     
@@ -748,7 +894,7 @@
 
             const logout = () => {
                 isAuthenticated.value = false; localStorage.removeItem('lp_auth');
-                limitStatus.value = {}; messages.value = []; myRequests.value = []; notices.value = [];
+                limitStatus.value = {}; messages.value = []; myRequests.value = []; notices.value = []; lottery.value = { enabled: true, cost: 5, current_nav: 0, can_play: false, prizes: [], recent_records: [], drawing: false, spinning: false, slotDisplay: '🎰', result: null, resultType: '', resultName: '', resultIcon: '', resultValue: 0, resultMessage: '', newNav: 0 };
                 pinInput.value = ''; 
                 hasSeenNoticesThisSession.value = false;
             };
@@ -854,6 +1000,7 @@
                 navData, allocations, allocationMeta, limitStatus, quarterlyInfo, notices,
                 isAuthenticated, showAuthModal, pinInput, verifyPin, closeAuthModal, logout, initiateCall,
                 showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall,
+                lottery, doLotteryDraw,
                 form, alphaForm, fileInput, msgInput, msgFileInput, selectedMessageFile, messages, myRequests,
                 submitWithdrawal, submitAlpha, claimQuarterly, submitMessage, handleMessageFileSelect, isImageFile, isVideoFile, openMediaModal,
                 isUploading, isSubmitting,
