@@ -223,10 +223,10 @@
 
         <div class="space-y-6">
 
-            <!-- 🎰 博彩系统控制台 -->
+            <!-- 🎰 抽奖系统控制台 -->
             <div class="bg-purple-900/20 p-6 rounded-lg border border-purple-500/50 shadow-[0_0_15px_rgba(168,85,247,0.15)] relative overflow-hidden">
-                <div class="absolute top-0 right-0 bg-purple-600 text-xs font-bold px-2 py-1 rounded-bl text-white tracking-widest">CASINO</div>
-                <h2 class="font-bold text-purple-400 mb-4">🎰 博彩系统控制台</h2>
+                <div class="absolute top-0 right-0 bg-purple-600 text-xs font-bold px-2 py-1 rounded-bl text-white tracking-widest">LUCKY</div>
+                <h2 class="font-bold text-purple-400 mb-4">🎰 抽奖系统控制台</h2>
 
                 <!-- 系统设置 -->
                 <div class="bg-black/50 p-3 rounded border border-purple-800/50 mb-3">
@@ -250,8 +250,9 @@
                         <div v-for="p in lottoConfig.prizes" :key="p.id" class="flex items-center justify-between bg-black/70 p-1.5 rounded border text-xs" :class="p.is_active ? 'border-gray-700' : 'border-red-900/50 opacity-50'">
                             <div class="flex items-center gap-1.5 flex-1 min-w-0">
                                 <span class="text-sm">{{ p.icon }}</span>
-                                <span class="text-gray-300 truncate max-w-[90px]" :title="p.name">{{ p.name }}</span>
-                                <span class="text-gray-500">({{ lottoProb(p) }})</span>
+                                <span class="text-gray-300 truncate max-w-[80px]" :title="p.name">{{ p.name }}</span>
+                                <input :value="p.weight" @change="lotteryEditWeight(p, $event.target.value)" type="number" min="1" class="w-12 bg-black border border-purple-700/50 rounded px-1 text-white text-xs text-center focus:outline-none focus:border-purple-400" title="直接改权重，概率自动更新">
+                                <span class="text-purple-400 text-[10px] w-10 text-right">{{ lottoProb(p) }}</span>
                             </div>
                             <div class="flex gap-1">
                                 <button @click="lotteryTogglePrize(p)" class="text-xs px-2 py-0.5 rounded border" :class="p.is_active ? 'border-gray-600 text-gray-400 hover:bg-gray-800' : 'border-red-700 text-red-400 hover:bg-red-900/40'" :title="p.is_active ? '停用' : '启用'">{{ p.is_active ? '⏸' : '▶' }}</button>
@@ -911,7 +912,7 @@
             };
 
 
-            // 🎰 博彩管理状态
+            // 🎰 抽奖管理状态
             const lottoConfig = ref({ enabled: true, cost: 5, prizes: [] });
             const lottoStats = ref({ total_draws: 0, total_cost: 0, total_payout: 0, net_profit: 0, profit_rate: 0, wins: 0, jackpots: 0, loses: 0, recent: [] });
             const lottoForm = ref({ name: '', type: 'CASH', value: '0', weight: '10' });
@@ -937,7 +938,7 @@
                 fd.append('cost', lottoConfig.value.cost);
                 const res = await fetch(`${API_BASE}/gp/lottery_config`, { method: 'POST', body: fd, headers: { 'X-GP-Token': gpToken } });
                 if (res.status === 403) { logout(); return; }
-                if (res.ok) { alert('博彩费用已更新'); fetchLottoConfig(); }
+                if (res.ok) { alert('抽奖费用已更新'); fetchLottoConfig(); }
             };
 
             const lotteryToggleEnabled = async () => {
@@ -972,6 +973,17 @@
                 const total = lottoConfig.value.prizes.reduce((s, p) => s + (p.is_active ? p.weight : 0), 0);
                 if (total <= 0) return '0%';
                 return (prize.weight / total * 100).toFixed(1) + '%';
+            };
+
+            const lotteryEditWeight = async (prize, newWeight) => {
+                const w = parseInt(newWeight);
+                if (!w || w < 1) { alert('权重必须为正整数'); fetchLottoConfig(); return; }
+                const fd = new FormData();
+                fd.append('action', 'edit'); fd.append('prize_id', prize.id);
+                fd.append('prize_weight', w);
+                const res = await fetch(`${API_BASE}/gp/lottery_config`, { method: 'POST', body: fd, headers: { 'X-GP-Token': gpToken } });
+                if (res.status === 403) { logout(); return; }
+                if (res.ok) fetchLottoConfig();
             };
 
             const lotteryAddPrize = async () => {
@@ -1146,7 +1158,7 @@
                         } catch(_) {}
                     }
 
-                    // 7. 拉取博彩配置和统计（不阻塞主流程）
+                    // 7. 拉取抽奖配置和统计（不阻塞主流程）
                     fetchLottoConfig();
                     fetchLottoStats();
                 } catch(e) {
@@ -1318,7 +1330,7 @@
                 document.removeEventListener('visibilitychange', restartPolling);
                 if (recoveredBannerTimer) clearTimeout(recoveredBannerTimer);
             });
-            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, notificationLogs, onlyFailedLogs, retryingLogId, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, retryNotification, replyMsg, isImageFileAdmin, isVideoFileAdmin, openMediaModalAdmin, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown, isAuthenticated, pinInput, authError, authLoading, authStep, webauthnReady, checkWebauthnReady, doFingerprintAuth, startFingerprint, doEnrollFingerprint, enrollFingerprint, resetFingerprint, verifyPin, logout, incomingCall, showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall, acceptIncomingCall, declineIncomingCall, currentQuote, quoteGlow, nextQuote, lottoConfig, lottoStats, lottoForm, lottoProb, fetchLottoConfig, fetchLottoStats, lotteryUpdateCost, lotteryToggleEnabled, lotteryTogglePrize, lotteryDeletePrize, lotteryAddPrize, lotteryResetRecords }
+            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, notificationLogs, onlyFailedLogs, retryingLogId, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, retryNotification, replyMsg, isImageFileAdmin, isVideoFileAdmin, openMediaModalAdmin, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown, isAuthenticated, pinInput, authError, authLoading, authStep, webauthnReady, checkWebauthnReady, doFingerprintAuth, startFingerprint, doEnrollFingerprint, enrollFingerprint, resetFingerprint, verifyPin, logout, incomingCall, showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall, acceptIncomingCall, declineIncomingCall, currentQuote, quoteGlow, nextQuote, lottoConfig, lottoStats, lottoForm, lottoProb, fetchLottoConfig, fetchLottoStats, lotteryUpdateCost, lotteryToggleEnabled, lotteryTogglePrize, lotteryEditWeight, lotteryDeletePrize, lotteryAddPrize, lotteryResetRecords }
         }
     }).mount('#admin-app')
 </script>

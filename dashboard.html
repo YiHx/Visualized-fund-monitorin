@@ -650,7 +650,7 @@
             const myRequests = ref([]);
             const notices = ref([]);
 
-            // 🎰 博彩状态
+            // 🎰 抽奖状态
             const lottery = ref({ enabled: true, cost: 5, current_nav: 0, can_play: false, prizes: [], recent_records: [], drawing: false, spinning: false, result: null, resultType: '', resultName: '', resultIcon: '', resultValue: 0, resultMessage: '', newNav: 0 });
 
             const fetchLotteryStatus = async () => {
@@ -852,7 +852,7 @@
                     limitStatus.value = await fetchJsonWithRetry(`${API_BASE}/lp/limit_status?t=${t}`);
                     messages.value = await fetchJsonWithRetry(`${API_BASE}/messages?t=${t}`);
                     myRequests.value = await fetchJsonWithRetry(`${API_BASE}/lp/my_requests?t=${t}`);
-                    fetchLotteryStatus();  // 异步拉取博彩状态，不阻塞
+                    fetchLotteryStatus();  // 异步拉取抽奖状态，不阻塞
 
                     const newNotices = await fetchJsonWithRetry(`${API_BASE}/lp/notices?t=${t}`);
                     notices.value = newNotices;

@@ -98,7 +98,7 @@ class DBNotificationLog(Base):
     status = Column(String, nullable=False)  # SUCCESS / FAILED
     response_msg = Column(String, nullable=True)
 
-# ── 博彩系统模型 ────────────────────────────────
+# ── 抽奖系统模型 ────────────────────────────────
 class DBLotteryPrize(Base):
     __tablename__ = "lottery_prizes"
     id = Column(Integer, primary_key=True, index=True)
@@ -355,7 +355,7 @@ def get_quarterly_info(db: Session):
 # ==========================================
 # 3. 接口路由
 # ==========================================
-# 2.5 博彩抽奖引擎
+# 2.5 趣味抽奖引擎
 # ==========================================
 import random
 
@@ -399,7 +399,7 @@ def execute_lottery_draw(db: Session, nav_total: float) -> dict:
     enabled = _get_config(db, "LOTTERY_ENABLED", "1")
 
     if enabled != "1":
-        raise HTTPException(status_code=403, detail="博彩系统当前已关闭。")
+        raise HTTPException(status_code=403, detail="抽奖系统当前已关闭。")
     if nav_total < cost:
         raise HTTPException(status_code=403, detail=f"余额不足！当前净值 ¥{nav_total:.2f}，单次抽奖 ¥{cost:.2f}。")
 
@@ -423,10 +423,10 @@ def execute_lottery_draw(db: Session, nav_total: float) -> dict:
     elif won_prize.prize_type == "MULTIPLIER":
         prize_value = round(cost * won_prize.value, 2)
 
-    db.add(DBTransaction(tx_type="ADJUST_DOWN", amount=cost, description=f"\U0001f3b0 博彩抽奖：{won_prize.name}"))
+    db.add(DBTransaction(tx_type="ADJUST_DOWN", amount=cost, description=f"\U0001f3b0 趣味抽奖：{won_prize.name}"))
 
     if prize_value > 0:
-        db.add(DBTransaction(tx_type="ADJUST_UP", amount=prize_value, description=f"\U0001f3b0 博彩中奖：{won_prize.name}，奖金 ¥{prize_value:.2f}"))
+        db.add(DBTransaction(tx_type="ADJUST_UP", amount=prize_value, description=f"\U0001f3b0 抽奖中奖：{won_prize.name}，奖金 ¥{prize_value:.2f}"))
 
     if won_prize.prize_type == "SPECIAL":
         result_type = "WIN"
@@ -834,7 +834,7 @@ def lp_get_my_requests(db: Session = Depends(get_db)):
     # 3. 把打包好的漂亮盒子送给前端
     return req_list
 
-# 🎰 博彩：LP 端点
+# 🎰 抽奖：LP 端点
 
 @app.get("/api/v1/lp/lottery_status")
 def lp_lottery_status(db: Session = Depends(get_db)):
@@ -967,11 +967,11 @@ def gp_update_allocation(asset_name: str = Form(...), amount: float = Form(...),
     db.commit()
     return {"status": "success", "message": f"资产配置已更新: {asset_name} -> ¥{amount}"}
 
-# ── 博彩：GP 控制端点 ──────────────────────
+# ── 抽奖：GP 控制端点 ──────────────────────
 
 @app.get("/api/v1/gp/lottery_config")
 def gp_lottery_config(db: Session = Depends(get_db), _: bool = Depends(require_gp_auth)):
-    """GP 查看博彩完整配置"""
+    """GP 查看抽奖完整配置"""
     _ensure_default_config(db)
     _ensure_default_prizes(db)
     prizes = db.query(DBLotteryPrize).order_by(DBLotteryPrize.id).all()
@@ -995,7 +995,7 @@ def gp_lottery_config_update(
     db: Session = Depends(get_db),
     _: bool = Depends(require_gp_auth)
 ):
-    """GP 管理博彩配置：更新成本/开关/奖品"""
+    """GP 管理抽奖配置：更新成本/开关/奖品"""
     _ensure_default_config(db)
     _ensure_default_prizes(db)
 
@@ -1046,7 +1046,7 @@ def gp_lottery_config_update(
 
 @app.get("/api/v1/gp/lottery_stats")
 def gp_lottery_stats(db: Session = Depends(get_db), _: bool = Depends(require_gp_auth)):
-    """GP 查看博彩统计数据"""
+    """GP 查看抽奖统计数据"""
     records = db.query(DBLotteryRecord).all()
     total = len(records)
     total_cost = sum(r.cost for r in records)
