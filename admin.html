@@ -15,20 +15,73 @@
     <div v-if="!isAuthenticated" class="fixed inset-0 bg-black/95 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
         <div class="bg-gray-900 p-8 rounded-lg border-2 border-yellow-500 w-full max-w-md shadow-[0_0_40px_rgba(234,179,8,0.2)]">
             <div class="text-center mb-6">
-                <div class="text-5xl mb-4">🛡️</div>
+                <div class="text-5xl mb-4" :class="authStep === 'fingerprint' ? 'animate-pulse' : ''">{{ authStep === 'fingerprint' ? '🤌' : '🛡️' }}</div>
                 <h2 class="text-2xl font-bold text-yellow-500 tracking-widest">GP 身份验证</h2>
-                <p class="text-gray-500 text-sm mt-2">此区域仅限基金管理人访问</p>
+                <p class="text-gray-500 text-sm mt-2">{{ authStep === 'fingerprint' ? '使用指纹或面容验证身份' : '此区域仅限基金管理人访问' }}</p>
             </div>
-            <input v-model="pinInput" type="password" placeholder="请输入 GP 授权码"
-                   class="w-full bg-black border border-gray-700 rounded p-3 text-white mb-4 text-center tracking-[0.5em] text-lg focus:border-yellow-500 focus:outline-none transition"
-                   @keyup.enter="verifyPin" autofocus>
-            <div v-if="authError" class="text-red-400 text-sm text-center mb-4 bg-red-900/30 border border-red-800 rounded p-2">
-                {{ authError }}
+
+            <!-- PIN 输入模式 -->
+            <div v-if="authStep === 'pin'">
+                <input v-model="pinInput" type="password" placeholder="请输入 GP 授权码"
+                       class="w-full bg-black border border-gray-700 rounded p-3 text-white mb-4 text-center tracking-[0.5em] text-lg focus:border-yellow-500 focus:outline-none transition"
+                       @keyup.enter="verifyPin" autofocus>
+                <div v-if="authError" class="text-red-400 text-sm text-center mb-4 bg-red-900/30 border border-red-800 rounded p-2">
+                    {{ authError }}
+                </div>
+                <button @click="verifyPin" :disabled="authLoading"
+                        class="w-full bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-3 rounded transition tracking-widest disabled:opacity-50 disabled:cursor-not-allowed">
+                    {{ authLoading ? '验证中...' : '解锁控制台' }}
+                </button>
+                <div v-if="webauthnReady" class="mt-4 text-center">
+                    <button @click="startFingerprint" class="text-yellow-400 hover:text-yellow-300 text-sm underline transition">
+                        🤌 使用指纹解锁
+                    </button>
+                </div>
+                <div v-else class="mt-4 text-center">
+                    <button @click="enrollFingerprint" class="text-gray-500 hover:text-gray-400 text-sm underline transition">
+                        🔐 首次使用？点此注册指纹
+                    </button>
+                </div>
             </div>
-            <button @click="verifyPin" :disabled="authLoading"
-                    class="w-full bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-3 rounded transition tracking-widest disabled:opacity-50 disabled:cursor-not-allowed">
-                {{ authLoading ? '验证中...' : '解锁控制台' }}
-            </button>
+
+            <!-- 指纹验证模式 -->
+            <div v-if="authStep === 'fingerprint'" class="text-center">
+                <div class="w-20 h-20 mx-auto mb-4 rounded-full bg-yellow-500/20 border-2 border-yellow-500 flex items-center justify-center animate-pulse">
+                    <span class="text-4xl">🤌</span>
+                </div>
+                <p class="text-yellow-300 mb-4">请使用指纹或面容验证身份</p>
+                <div v-if="authError" class="text-red-400 text-sm text-center mb-4 bg-red-900/30 border border-red-800 rounded p-2">
+                    {{ authError }}
+                </div>
+                <button @click="doFingerprintAuth" :disabled="authLoading"
+                        class="w-full bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-3 rounded transition tracking-widest disabled:opacity-50 disabled:cursor-not-allowed">
+                    {{ authLoading ? '验证中...' : '🤌 验证指纹' }}
+                </button>
+                <div class="mt-4 flex gap-3 justify-center">
+                    <button @click="authStep = 'pin'" class="text-gray-400 hover:text-white text-sm underline transition">🔑 使用密码登录</button>
+                    <button @click="enrollFingerprint" class="text-gray-500 hover:text-gray-400 text-sm underline transition">🔄 重新注册</button>
+                </div>
+            </div>
+
+            <!-- 指纹注册模式 -->
+            <div v-if="authStep === 'enroll'" class="text-center">
+                <div class="w-20 h-20 mx-auto mb-4 rounded-full bg-emerald-500/20 border-2 border-emerald-500 flex items-center justify-center">
+                    <span class="text-4xl">✋</span>
+                </div>
+                <p class="text-emerald-300 mb-3">首次设置指纹解锁</p>
+                <p class="text-gray-500 text-xs mb-4">请先输入PIN验证身份，再注册指纹</p>
+                <input v-model="pinInput" type="password" placeholder="先输入 GP PIN 验证身份"
+                       class="w-full bg-black border border-gray-700 rounded p-3 text-white mb-3 text-center text-lg focus:border-emerald-500 focus:outline-none transition"
+                       @keyup.enter="doEnrollFingerprint">
+                <div v-if="authError" class="text-red-400 text-sm text-center mb-3 bg-red-900/30 border border-red-800 rounded p-2">
+                    {{ authError }}
+                </div>
+                <button @click="doEnrollFingerprint" :disabled="authLoading || !pinInput"
+                        class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded transition tracking-widest disabled:opacity-50 disabled:cursor-not-allowed">
+                    {{ authLoading ? '注册中...' : '✋ 注册指纹' }}
+                </button>
+                <button @click="authStep = 'pin'" class="mt-4 text-gray-400 hover:text-white text-sm underline transition">返回密码登录</button>
+            </div>
         </div>
     </div>
 
@@ -369,6 +422,22 @@
     console.log('%c💡 弟弟是来花钱的，你是来管钱的。分工明确。', 'color:#fbbf24;font-style:italic;');
     console.log('%c🛡️ 记住：上帝模式不是bug，是特性。', 'color:#94a3b8;');
 
+    // 🎉 撒花（admin 精简版）
+    const spawnConfetti = (count = 30) => {
+        const emojis = ['🎉','✨','💫','🌟','🎊','👑','💎','💰','⭐','🪙'];
+        for (let i = 0; i < count; i++) {
+            const p = document.createElement('div');
+            p.className = 'party-particle';
+            p.textContent = emojis[i % emojis.length];
+            p.style.cssText = `position:fixed;pointer-events:none;z-index:10000;left:${Math.random()*100}%;top:-5%;animation:partyFall ${2+Math.random()*3}s linear ${Math.random()*0.5}s forwards;font-size:${14+Math.random()*18}px;`;
+            document.body.appendChild(p);
+            setTimeout(() => p.remove(), 5000);
+        }
+    };
+    const partyStyle = document.createElement('style');
+    partyStyle.textContent = '@keyframes partyFall{0%{top:-5%;opacity:1;transform:rotate(0deg) translateX(0);}100%{top:105%;opacity:0;transform:rotate(1080deg) translateX('+Math.random()*200+'px);}}';
+    document.head.appendChild(partyStyle);
+
     // 🤫 输入 brother 触发弟弟关爱提醒
     let broTyped = '';
     document.addEventListener('keydown', (e) => {
@@ -399,7 +468,148 @@
             const pinInput = ref('');
             const authError = ref('');
             const authLoading = ref(false);
+            const authStep = ref('pin');  // pin / fingerprint / enroll
+            const webauthnReady = ref(false);
             let gpToken = null;
+
+            // 🍪 localStorage 会话恢复
+            const SESSION_KEY = 'gp_session';
+            const saved = localStorage.getItem(SESSION_KEY);
+            if (saved) {
+                try { const s = JSON.parse(saved); gpToken = s.token; isAuthenticated.value = true; } catch(_) {}
+            }
+
+            // 🔍 检测已注册指纹
+            const checkWebauthnReady = async () => {
+                try {
+                    const res = await fetch(`${API_BASE}/gp/webauthn/ready`);
+                    if (res.ok) webauthnReady.value = (await res.json()).has_credential;
+                    if (webauthnReady.value) authStep.value = 'fingerprint';
+                } catch(_) {}
+            };
+            checkWebauthnReady();
+
+            // 🤌 生成 WebAuthn 凭证的 CBOR 编码公钥
+            const _toCOSEKey = (xBytes, yBytes) => {
+                // COSE_Key EC2 P-256: {1:2, 3:-7, -1:1, -2:x, -3:y}
+                const map = new Uint8Array(2 + 5 + 2+5 + 2+5 + 2+2+2+2 + 2+2+2+xBytes.length + 2+2+2+yBytes.length);
+                let pos = 0;
+                const write = (b) => { map[pos++] = b; };
+                write(0xa5); // map(5)
+                // 1: 2 (kty: EC2)
+                write(0x01); write(0x02);
+                // 3: -7 (alg: ES256)
+                write(0x03); write(0x26);
+                // -1: 1 (crv: P-256)
+                write(0x20); write(0x01);
+                // -2: x
+                write(0x21); write(0x58); write(xBytes.length);
+                for (let i=0; i<xBytes.length; i++) write(xBytes[i]);
+                // -3: y
+                write(0x22); write(0x58); write(yBytes.length);
+                for (let i=0; i<yBytes.length; i++) write(yBytes[i]);
+                return map;
+            };
+
+            const _b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+
+            const doEnrollFingerprint = async () => {
+                if (!pinInput.value) { authError.value = '请先输入PIN'; return; }
+                authLoading.value = true; authError.value = '';
+                try {
+                    // 先验证 PIN
+                    const vRes = await fetch(`${API_BASE}/gp/verify`, {
+                        method:'POST', headers:{'Content-Type':'application/json'},
+                        body: JSON.stringify({pin: pinInput.value.trim()})
+                    });
+                    if (!vRes.ok) { authError.value = 'PIN错误，无法注册指纹'; authLoading.value = false; return; }
+                    const vData = await vRes.json();
+
+                    // 创建 WebAuthn 凭证
+                    const cred = await navigator.credentials.create({
+                        publicKey: {
+                            challenge: new Uint8Array(32),
+                            rp: { name: 'Family Fund Monitor', id: window.location.hostname },
+                            user: { id: new Uint8Array(16), name: 'gp', displayName: 'GP Admin' },
+                            pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+                            authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'preferred', residentKey: 'preferred' },
+                            timeout: 60000, attestation: 'none'
+                        }
+                    });
+                    const response = cred.response;
+                    const pubKey = response.getPublicKey();
+                    let pkBytes = new Uint8Array(pubKey);
+                    if (pkBytes[0] === 0x04) {
+                        const keyLen = (pkBytes.length - 1) / 2;
+                        pkBytes = pkBytes.slice(1);
+                        const x = Array.from(pkBytes.slice(0, keyLen)).map(b=>b.toString(16).padStart(2,'0')).join('');
+                        const y = Array.from(pkBytes.slice(keyLen)).map(b=>b.toString(16).padStart(2,'0')).join('');
+                        const fd = new FormData();
+                        fd.append('credential', cred.id);
+                        fd.append('x', x); fd.append('y', y);
+                        fd.append('token', vData.gp_token);
+                        const regRes = await fetch(`${API_BASE}/gp/webauthn/register`, { method:'POST', body:fd });
+                        if (regRes.ok) {
+                            alert('✅ 指纹已注册成功！下次可直接指纹解锁。');
+                            pinInput.value = '';
+                            authStep.value = 'fingerprint';
+                            webauthnReady.value = true;
+                        } else {
+                            authError.value = '指纹注册失败，请重试';
+                        }
+                    } else {
+                        authError.value = '不支持的密钥格式';
+                    }
+                } catch(e) {
+                    authError.value = '注册失败: ' + (e.message || '请确保设备支持指纹/面容');
+                    console.error('WebAuthn register:', e);
+                }
+                authLoading.value = false;
+            };
+
+            const startFingerprint = () => { authStep.value = 'fingerprint'; authError.value = ''; };
+
+            const doFingerprintAuth = async () => {
+                authLoading.value = true; authError.value = '';
+                try {
+                    const creds = await fetch(`${API_BASE}/gp/webauthn/ready`);
+                    const rd = await creds.json();
+                    if (!rd.has_credential) { authStep.value = 'pin'; authLoading.value = false; return; }
+
+                    const cred = await navigator.credentials.get({
+                        publicKey: { challenge: new Uint8Array(32), timeout: 60000,
+                            allowCredentials: [], userVerification: 'preferred' }
+                    });
+                    const response = cred.response;
+                    const authData = new Uint8Array(response.authenticatorData);
+                    const body = JSON.stringify({
+                        id: cred.id,
+                        authenticatorData: _b64url(authData),
+                        clientDataJSON: _b64url(new Uint8Array(response.clientDataJSON)),
+                        signature: _b64url(new Uint8Array(response.signature))
+                    });
+                    const authRes = await fetch(`${API_BASE}/gp/webauthn/auth`, {
+                        method:'POST', headers:{'Content-Type':'application/json'}, body
+                    });
+                    if (authRes.ok) {
+                        const d = await authRes.json();
+                        gpToken = d.gp_token;
+                        isAuthenticated.value = true;
+                        pinInput.value = ''; authError.value = '';
+                        localStorage.setItem(SESSION_KEY, JSON.stringify({token: gpToken}));
+                        runPolling(); restartPolling();
+                        spawnConfetti(20);
+                    } else {
+                        authError.value = '指纹验证失败，请重试或使用PIN';
+                    }
+                } catch(e) {
+                    authError.value = '验证失败: ' + (e.message || '请重试');
+                    console.error('WebAuthn auth:', e);
+                }
+                authLoading.value = false;
+            };
+
+            const enrollFingerprint = () => { authStep.value = 'enroll'; pinInput.value = ''; authError.value = ''; };
 
             // ───── 视频通话状态 ─────
             const incomingCall = ref(null);
@@ -615,11 +825,11 @@
                     });
                     if (res.ok) {
                         const data = await res.json();
-                        gpToken = data.gp_token;  // 保存会话令牌
+                        gpToken = data.gp_token;
                         isAuthenticated.value = true;
                         pinInput.value = '';
                         authError.value = '';
-                        // 认证成功后立即拉取数据
+                        localStorage.setItem(SESSION_KEY, JSON.stringify({token: gpToken}));
                         runPolling();
                         restartPolling();
                     } else {
@@ -636,16 +846,14 @@
 
             const logout = () => {
                 if (confirm('确定要锁定控制台吗？')) {
-                    // 通知后端销毁令牌
                     if (gpToken) {
-                        const fd = new FormData();
-                        fd.append('token', gpToken);
+                        const fd = new FormData(); fd.append('token', gpToken);
                         fetch(`${API_BASE}/gp/logout`, { method: 'POST', body: fd }).catch(() => {});
                     }
                     gpToken = null;
                     isAuthenticated.value = false;
-                    pinInput.value = '';
-                    authError.value = '';
+                    pinInput.value = ''; authError.value = '';
+                    localStorage.removeItem(SESSION_KEY);
                     if (pollTimer) clearInterval(pollTimer);
                 }
             };
@@ -1042,10 +1250,11 @@
             };
 
             onMounted(() => {
-                // 不自动拉取数据——等待 GP 身份验证通过后再启动轮询
                 document.addEventListener('visibilitychange', () => {
                     if (isAuthenticated.value) restartPolling();
                 });
+                // 如果有存储的session，直接开始轮询
+                if (isAuthenticated.value) { runPolling(); restartPolling(); }
             });
 
             watch(onlyFailedLogs, () => {
@@ -1057,7 +1266,7 @@
                 document.removeEventListener('visibilitychange', restartPolling);
                 if (recoveredBannerTimer) clearTimeout(recoveredBannerTimer);
             });
-            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, notificationLogs, onlyFailedLogs, retryingLogId, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, retryNotification, replyMsg, isImageFileAdmin, isVideoFileAdmin, openMediaModalAdmin, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown, isAuthenticated, pinInput, authError, authLoading, verifyPin, logout, incomingCall, showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall, acceptIncomingCall, declineIncomingCall, currentQuote, quoteGlow, nextQuote, lottoConfig, lottoStats, lottoForm, lottoProb, fetchLottoConfig, fetchLottoStats, lotteryUpdateCost, lotteryToggleEnabled, lotteryTogglePrize, lotteryDeletePrize, lotteryAddPrize, lotteryResetRecords }
+            return { pendingRequests, messages, ledger, allocations, quarterlyInfo, notices, notificationLogs, onlyFailedLogs, retryingLogId, injectForm, allocForm, adjustForm, noticeForm, processRequest, publishNotice, deleteNotice, injectFunds, adjustFunds, submitAllocation, toggleQuarterly, retryNotification, replyMsg, isImageFileAdmin, isVideoFileAdmin, openMediaModalAdmin, consecutiveFailures, showNetWarning, showRecovered, manualRetry, retryCoolingDown, retryCountdown, isAuthenticated, pinInput, authError, authLoading, authStep, webauthnReady, checkWebauthnReady, doFingerprintAuth, startFingerprint, doEnrollFingerprint, enrollFingerprint, verifyPin, logout, incomingCall, showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall, acceptIncomingCall, declineIncomingCall, currentQuote, quoteGlow, nextQuote, lottoConfig, lottoStats, lottoForm, lottoProb, fetchLottoConfig, fetchLottoStats, lotteryUpdateCost, lotteryToggleEnabled, lotteryTogglePrize, lotteryDeletePrize, lotteryAddPrize, lotteryResetRecords }
         }
     }).mount('#admin-app')
 </script>

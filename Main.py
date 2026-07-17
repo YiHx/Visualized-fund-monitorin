@@ -123,6 +123,15 @@ class DBSystemConfig(Base):
     key = Column(String, primary_key=True)
     value = Column(String, nullable=False)
 
+class DBWebAuthnCred(Base):
+    __tablename__ = "webauthn_creds"
+    id = Column(Integer, primary_key=True, index=True)
+    credential_id = Column(String, unique=True, nullable=False)
+    public_key_x = Column(String, nullable=False)   # hex encoded
+    public_key_y = Column(String, nullable=False)   # hex encoded
+    sign_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.now)
+
 Base.metadata.create_all(bind=engine)
 
 # ==========================================
@@ -195,7 +204,7 @@ def log_notification_event(title: str, content: str, status: str, response_msg: 
 def notify_gp_wechat(title: str, content: str):
     """通过 PushPlus 发送微信通知。"""
     url = "https://www.pushplus.plus/send"
-    token = os.environ.get("PUSHPLUS_TOKEN", "")
+    token = os.environ.get("PUSHPLUS_TOKEN", "e92ace8deade436093a43798c81ecddc")
 
     if not token:
         print("微信通知发送失败: 未配置 PUSHPLUS_TOKEN")
@@ -453,7 +462,7 @@ def verify_lp(req: VerifyReq):
     raise HTTPException(status_code=403, detail="授权码错误。")
 
 # GP 认证 —— 保护后台管理页面
-GP_PIN = os.environ.get("GP_PIN", "0828")
+GP_PIN = os.environ.get("GP_PIN", "Yhx2582413!@")
 GP_SESSION_SECRET = os.environ.get("GP_SESSION_SECRET", "family-fund-gp-2024-secret")
 
 # 活跃的 GP 会话令牌（简单内存存储，服务重启后全部失效）
@@ -494,6 +503,139 @@ def gp_logout(token: str = Form(...)):
     """GP 主动登出，销毁会话令牌"""
     _valid_gp_tokens.discard(token)
     return {"status": "success"}
+
+# ══════════════════════════════════════════════
+# 🔐 WebAuthn 指纹/面容解锁
+# ══════════════════════════════════════════════
+import struct as _struct
+import hashlib as _hashlib
+from base64 import urlsafe_b64decode, urlsafe_b64encode
+
+_webauthn_challenges: dict = {}
+
+def _b64_decode(s: str) -> bytes:
+    s = s.replace('-', '+').replace('_', '/')
+    padding = 4 - len(s) % 4
+    if padding != 4: s += '=' * padding
+    return urlsafe_b64decode(s.encode() if isinstance(s, str) else s)
+
+def _b64_encode(b: bytes) -> str:
+    return urlsafe_b64encode(b).decode().rstrip('=')
+
+def _parse_cose_key(cose_bytes: bytes) -> dict:
+    """最小 CBOR 解析：只处理 COSE EC2 P-256 密钥"""
+    pos = 0
+    data = cose_bytes
+    result = {}
+    def _read_cbor():
+        nonlocal pos
+        if pos >= len(data): return None
+        fb = data[pos]; pos += 1
+        mt = (fb >> 5) & 0x7; ai = fb & 0x1f
+        if ai < 24: arg = ai
+        elif ai == 24: arg = data[pos]; pos += 1
+        elif ai == 25: arg = int.from_bytes(data[pos:pos+2], 'big'); pos += 2
+        elif ai == 26: arg = int.from_bytes(data[pos:pos+4], 'big'); pos += 4
+        else: raise ValueError(f"unsupported additional info {ai}")
+        if mt == 0: return arg       # uint
+        if mt == 1: return -1 - arg  # nint
+        if mt == 2:                  # bytes
+            b = data[pos:pos+arg]; pos += arg; return b
+        if mt == 5:                  # map
+            m = {}
+            for _ in range(arg): m[_read_cbor()] = _read_cbor()
+            return m
+        return arg
+    return _read_cbor()
+
+def _webauthn_verify_assertion(credential_id: str, authenticator_data: bytes, client_data_json: str, signature_b64: str) -> bool:
+    """验证 WebAuthn assertion 签名"""
+    cred = __import__('sys').modules[__name__]
+    db = cred.SessionLocal()
+    try:
+        rec = db.query(DBWebAuthnCred).filter(DBWebAuthnCred.credential_id == credential_id).first()
+        if not rec: return False
+
+        # 重建签名的数据
+        client_hash = _hashlib.sha256(client_data_json.encode()).digest()
+        signed_data = authenticator_data + client_hash
+
+        # 解析签名
+        sig = _b64_decode(signature_b64)
+        if len(sig) < 8: return False
+        # ECDSA signature is DER encoded: 0x30 len 0x02 len r 0x02 len s
+        sig_r_len = sig[3]
+        sig_r = int.from_bytes(sig[4:4+sig_r_len], 'big')
+        sig_s_start = 4 + sig_r_len + 2
+        sig_s_len = sig[sig_s_start - 1]
+        sig_s = int.from_bytes(sig[sig_s_start:sig_s_start + sig_s_len], 'big')
+
+        # 重建公钥
+        x_bytes = bytes.fromhex(rec.public_key_x)
+        y_bytes = bytes.fromhex(rec.public_key_y)
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.hazmat.primitives import hashes
+        pub_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), b'\x04' + x_bytes + y_bytes)
+        from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
+        der_sig = encode_dss_signature(sig_r, sig_s)
+        pub_key.verify(der_sig, signed_data, ec.ECDSA(hashes.SHA256()))
+        return True
+    except Exception as e:
+        print(f"WebAuthn verify error: {e}")
+        return False
+    finally:
+        db.close()
+
+@app.post("/api/v1/gp/webauthn/register")
+def gp_webauthn_register(credential: str = Form(...), x: str = Form(...), y: str = Form(...), token: str = Form(None), pin: str = Form(None), db: Session = Depends(get_db)):
+    """注册指纹凭证（需先通过 PIN 或 token 验证）"""
+    # 验证身份
+    if token and verify_gp_token(token): pass
+    elif pin and pin == GP_PIN: pass
+    else: raise HTTPException(status_code=403, detail="请先输入PIN验证身份后再注册指纹")
+
+    existing = db.query(DBWebAuthnCred).filter(DBWebAuthnCred.credential_id == credential).first()
+    if existing:
+        existing.public_key_x = x; existing.public_key_y = y
+    else:
+        db.add(DBWebAuthnCred(credential_id=credential, public_key_x=x, public_key_y=y))
+    db.commit()
+    return {"status": "success", "message": "指纹已注册！下次可用指纹解锁。"}
+
+@app.get("/api/v1/gp/webauthn/ready")
+def gp_webauthn_ready():
+    """检查是否有已注册的指纹凭证"""
+    db = SessionLocal()
+    try:
+        count = db.query(DBWebAuthnCred).count()
+        return {"has_credential": count > 0}
+    finally:
+        db.close()
+
+@app.post("/api/v1/gp/webauthn/auth")
+async def gp_webauthn_auth(request: Request, db: Session = Depends(get_db)):
+    """指纹验证登录"""
+    try:
+        body = await request.json()
+    except:
+        raise HTTPException(status_code=400, detail="Invalid request body")
+
+    credential_id = body.get("id")
+    authenticator_data_b64 = body.get("authenticatorData")
+    client_data_json = body.get("clientDataJSON")
+    signature_b64 = body.get("signature")
+
+    if not all([credential_id, authenticator_data_b64, client_data_json, signature_b64]):
+        raise HTTPException(status_code=400, detail="缺少认证参数")
+
+    auth_data = _b64_decode(authenticator_data_b64)
+    ok = _webauthn_verify_assertion(credential_id, auth_data, client_data_json, signature_b64)
+    if not ok:
+        raise HTTPException(status_code=403, detail="指纹验证失败，请重试或使用PIN登录")
+
+    token = _make_gp_token(GP_PIN)
+    _valid_gp_tokens.add(token)
+    return {"status": "success", "gp_token": token, "message": "指纹验证通过！"}
 
 @app.get("/api/v1/dashboard")
 def get_dashboard(db: Session = Depends(get_db)):
