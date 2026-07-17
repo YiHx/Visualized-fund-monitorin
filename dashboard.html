@@ -38,7 +38,7 @@
         <div>
             <h1 class="text-2xl font-bold text-gray-200 tracking-widest">底层资产监控系统</h1>
             <p class="text-sm text-gray-400 mt-1 flex items-center">
-                当前状态: {{ isAuthenticated ? '全量功能已解锁' : '只读模式' }}
+                当前状态: {{ isAuthenticated ? '全量功能已解锁' : '只读模式' }} {{ navMood }}
                 <span class="ml-3 flex items-center bg-gray-800 px-2 py-0.5 rounded text-xs">
                     <span class="animate-pulse h-2 w-2 rounded-full bg-emerald-500 mr-1"></span> 实时同步
                 </span>
@@ -118,6 +118,9 @@
             <span class="text-gray-400">已生复利: <span class="text-emerald-400 font-mono">+¥{{ navData.total_compound_interest }}</span></span>
         </div>
     </div>
+
+    <!-- 🌈 弟弟专属鼓励语 -->
+    <div v-if="showEncourage" class="bg-gradient-to-r from-amber-900/30 via-yellow-900/20 to-amber-900/30 border border-amber-700/50 rounded-lg px-5 py-3 text-center text-sm text-amber-300 animate-fade-in-down cursor-pointer select-none" @click="nextEncourage" title="点击换一句">💛 {{ encourageText }}</div>
 
     <div class="bg-gray-800 p-6 rounded-lg border-l-4 border-yellow-500 border-t border-b border-r border-gray-700 shadow-lg">
         <div class="flex items-center mb-4">
@@ -257,6 +260,15 @@
                     class="w-full bg-purple-700 hover:bg-purple-600 disabled:bg-gray-800 disabled:text-gray-500 text-white font-bold py-4 rounded-lg transition text-lg tracking-wider shadow-lg">
                     {{ lottery.can_play ? '🎲 立即抽奖' : (lottery.enabled === false ? '⏸️ 系统维护中' : '💸 余额不足') }}
                 </button>
+                <!-- 🔮 运势占卜小按钮 -->
+                <div class="flex gap-2">
+                    <button @click="drawFortune" class="flex-1 border border-amber-700/50 text-amber-400 hover:bg-amber-900/30 text-xs py-2 rounded transition">🔮 今日财运占卜</button>
+                    <button @click="nextEncourage" class="flex-1 border border-pink-700/50 text-pink-400 hover:bg-pink-900/30 text-xs py-2 rounded transition">💛 换一句鼓励</button>
+                </div>
+                <!-- 占卜结果弹窗 -->
+                <div v-if="showFortune" class="bg-amber-900/30 border border-amber-500 rounded-lg p-3 text-center animate-fade-in-down">
+                    <div class="text-amber-300 font-bold text-base">{{ fortuneText }}</div>
+                </div>
             </div>
 
             <!-- 🎰 老虎机动画 -->
@@ -495,6 +507,36 @@
     let funnyStatusIdx = 0;
     const getFunnyStatus = () => { funnyStatusIdx = (funnyStatusIdx + 1) % funnyStatuses.length; return funnyStatuses[funnyStatusIdx]; };
 
+    // ══════════════════════════════════════════
+    // 🎮 Konami Code 彩蛋 (↑↑↓↓←→←→BA)
+    // ══════════════════════════════════════════
+    const konamiCode = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','KeyB','KeyA'];
+    let konamiPos = 0;
+    document.addEventListener('keydown', (e) => {
+        if (e.code === konamiCode[konamiPos]) { konamiPos++; }
+        else { konamiPos = (e.code === 'ArrowUp' ? 1 : 0); }
+        if (konamiPos === konamiCode.length) {
+            konamiPos = 0;
+            spawnConfetti(100);
+            sfx.jackpot();
+            const msg = document.createElement('div');
+            msg.style.cssText = 'position:fixed;top:30%;left:50%;transform:translate(-50%,-50%);z-index:99999;font-size:3rem;font-weight:bold;color:#fbbf24;text-shadow:0 0 30px #f59e0b;pointer-events:none;animation:sparkleFade 3s ease-out forwards;text-align:center;background:rgba(0,0,0,0.8);padding:20px 40px;border-radius:16px;border:2px solid #fbbf24;';
+            msg.textContent = '🎮 作弊码激活！\nGP可能不会批准这个...';
+            document.body.appendChild(msg);
+            setTimeout(() => msg.remove(), 3500);
+        }
+    });
+
+    // ══════════════════════════════════════════
+    // 🤫 控制台悄悄话
+    // ══════════════════════════════════════════
+    console.log('%c🏦 家庭基金监控系统 v2.0 %c| 已就绪',
+        'font-size:18px;color:#34d399;font-weight:bold;',
+        'font-size:12px;color:#94a3b8;');
+    console.log('%c💡 提示：试试按 ↑↑↓↓←→←→BA', 'color:#fbbf24;font-style:italic;');
+    console.log('%c🐛 如果你发现了bug，那不是bug，那是GP的宏观调控。', 'color:#94a3b8;');
+    console.log('%c📖 弟弟使用手册第一章：多抽奖，少提款。', 'color:#fbbf24;');
+
     const { createApp, ref, onMounted, onUnmounted } = Vue
     createApp({
         setup() {
@@ -538,6 +580,60 @@
             const allocations = ref([]);
             const allocationMeta = ref({});
             const quarterlyInfo = ref({});
+
+            // 🌈 弟弟专属：鼓励语 + 心情 + 运势
+            const encourages = [
+                "今天是弟弟努力的一天！GP 看到了你的付出 💪", "弟弟真棒！NAV 的每一分增长都有你的功劳 ✨",
+                "记住：你不仅是投资人，你是这个家的未来 🌟", "弟弟今天的财运指数：⭐⭐⭐⭐⭐ 五星好评！",
+                "就算抽奖没中，你也是GP心中最靓的仔 😎", "提款要三思，抽奖要及时，生活要开心 🎯",
+                "哥哥说：NAV涨了，弟弟的功劳占51% 📈", "据说今天适合抽奖，不适合提款 🎰",
+                "弟弟的每一次操作都在创造历史（至少是家庭历史）🏆", "GP在此郑重声明：弟弟是不可或缺的家庭CFO 👑",
+                "今天的NAV，比昨天更爱你一点点 💚", "弟弟：钱是数字，快乐是真实的 🎊",
+                "如果NAV会说话，它最想说的就是：谢谢弟弟！😊", "据说GP今天心情很好，可以去试试提款 🍀",
+                "弟弟的财运密码已经激活 🔐✨", "每一个弟弟的背后，都有一个默默数钱的哥哥 💰"
+            ];
+            const fortunes = [
+                "🔮 今日卦象：大吉 · 宜抽奖 · 忌提款", "🔮 今日卦象：中吉 · 适合观望 · 等待良机",
+                "🔮 今日卦象：上上签 · 抽奖必中！", "🔮 今日卦象：小吉 · 财运平稳 · 宜守不宜攻",
+                "🔮 今日卦象：财运亨通 · NAV看涨！", "🔮 今日卦象：稳中向好 · 复利在暗中工作",
+                "🔮 今日卦象：有惊无险 · GP会保护你的", "🔮 今日卦象：暴富在即 · 建议立即抽奖",
+                "🔮 今日卦象：潜龙勿用 · 但抽奖除外", "🔮 今日卦象：富贵逼人 · NAV即将突破天际",
+                "🔮 今日卦象：玄学加持 · 今日运势极佳", "🔮 今日卦象：紫气东来 · 适合小额提款"
+            ];
+            const showEncourage = ref(true);
+            const encourageText = ref(encourages[0]);
+            const navMood = ref('😊');
+            const fortuneText = ref(fortunes[0]);
+            const showFortune = ref(false);
+
+            const nextEncourage = () => {
+                const idx = Math.floor(Math.random() * encourages.length);
+                encourageText.value = encourages[idx];
+                showEncourage.value = false;
+                setTimeout(() => { showEncourage.value = true; }, 300);
+            };
+            const drawFortune = () => {
+                fortuneText.value = fortunes[Math.floor(Math.random() * fortunes.length)];
+                showFortune.value = true;
+                spawnConfetti(15);
+                sfx.coin();
+                setTimeout(() => { showFortune.value = false; }, 5000);
+            };
+            const updateNavMood = (nav) => {
+                const moods = [
+                    { min: 0, max: 100, emoji: '🥺', label: '需要GP关爱期' },
+                    { min: 100, max: 500, emoji: '🌱', label: '萌芽期' },
+                    { min: 500, max: 1000, emoji: '😊', label: '稳健增长期' },
+                    { min: 1000, max: 2000, emoji: '😎', label: '信心满满期' },
+                    { min: 2000, max: 5000, emoji: '🚀', label: '火箭上升期' },
+                    { min: 5000, max: 99999, emoji: '👑', label: '财富自由期' },
+                ];
+                const m = moods.find(m => nav >= m.min && nav < m.max);
+                navMood.value = m ? m.emoji : '💎';
+            };
+
+            // 定时轮换鼓励语
+            setInterval(() => { if (isAuthenticated.value) nextEncourage(); }, 45000);
             
             const isAuthenticated = ref(localStorage.getItem('lp_auth') === 'true');
             const showAuthModal = ref(false);
@@ -737,6 +833,7 @@
                     const dashData = await fetchJsonWithRetry(`${API_BASE}/dashboard?t=${t}`);
                     navData.value = dashData.nav;
                     animateNav(dashData.nav.R_total);
+                    updateNavMood(dashData.nav.R_total);
                     allocations.value = dashData.allocations;
                     allocationMeta.value = dashData.allocation_meta || {};
                     quarterlyInfo.value = dashData.quarterly_info;
@@ -1193,7 +1290,8 @@
             
             return { 
                 navData, allocations, allocationMeta, limitStatus, quarterlyInfo, notices,
-                navDisplay, clickNav, isAuthenticated, showAuthModal, pinInput, verifyPin, closeAuthModal, logout, initiateCall,
+                navDisplay, navMood, clickNav, isAuthenticated, showAuthModal, pinInput, verifyPin, closeAuthModal, logout, initiateCall,
+                showEncourage, encourageText, nextEncourage, fortuneText, showFortune, drawFortune,
                 showCallModal, callStatusText, callStatusIcon, callStatusClass, hangupCall,
                 lottery, doLotteryDraw,
                 form, alphaForm, fileInput, msgInput, msgFileInput, selectedMessageFile, messages, myRequests,

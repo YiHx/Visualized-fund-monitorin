@@ -58,7 +58,7 @@
 
     <header class="border-b border-yellow-700/50 pb-4 flex justify-between items-end">
         <div>
-            <h1 class="text-3xl font-bold text-yellow-500 tracking-wider">GP 全权控制台</h1>
+            <h1 class="text-3xl font-bold text-yellow-500 tracking-wider">👑 GP 全权控制台</h1>
             <p class="text-sm mt-1" :class="quoteGlow ? 'text-yellow-300' : 'text-gray-500'" @click="nextQuote" title="点击换一句" style="cursor:pointer">
                 💬 "{{ currentQuote }}" — GP
             </p>
@@ -362,6 +362,24 @@
 </div>
 
 <script>
+    // 👑 GP 专属控制台悄悄话
+    console.log('%c🏛️ GP 全权控制台 %c| 权力越大，责任越大',
+        'font-size:18px;color:#fbbf24;font-weight:bold;',
+        'font-size:12px;color:#94a3b8;');
+    console.log('%c💡 弟弟是来花钱的，你是来管钱的。分工明确。', 'color:#fbbf24;font-style:italic;');
+    console.log('%c🛡️ 记住：上帝模式不是bug，是特性。', 'color:#94a3b8;');
+
+    // 🤫 输入 brother 触发弟弟关爱提醒
+    let broTyped = '';
+    document.addEventListener('keydown', (e) => {
+        broTyped += e.key.toLowerCase();
+        if (broTyped.length > 7) broTyped = broTyped.slice(-7);
+        if (broTyped === 'brother') {
+            broTyped = '';
+            alert('👑 GP提醒：记得给弟弟发个红包哦~\n\n弟弟今天的抽奖盈亏：每次¥5，纯属娱乐 😊');
+        }
+    });
+
     const { createApp, ref, onMounted, onUnmounted, watch } = Vue
     createApp({
         setup() {
