@@ -350,18 +350,37 @@
                     if (!gpPeerConn) return;
                     try {
                         const stats = await gpPeerConn.getStats();
-                        let latency = '--', resolution = '-- x --', frameRate = '--';
+                        let latency = '-- ms', resolution = '-- x --', frameRate = '-- fps';
+
                         stats.forEach(r => {
+                            // 延迟：优先 candidate-pair
+                            if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.currentRoundTripTime) {
+                                latency = Math.round(r.currentRoundTripTime * 1000) + ' ms';
+                            }
+                            // 延迟回退：remote-inbound-rtp
+                            if (latency === '-- ms' && r.type === 'remote-inbound-rtp' && r.roundTripTime) {
+                                latency = Math.round(r.roundTripTime * 1000) + ' ms';
+                            }
+                            // 分辨率 + 帧率：inbound-rtp
                             if (r.type === 'inbound-rtp' && r.mediaType === 'video') {
-                                latency = r.roundTripTime ? Math.round(r.roundTripTime * 1000) + ' ms' : '-- ms';
-                                resolution = `${r.frameWidth || '--'} x ${r.frameHeight || '--'}`;
-                                frameRate = r.framesPerSecond ? Math.round(r.framesPerSecond) + ' fps' : '-- fps';
+                                const w = r.frameWidth, h = r.frameHeight;
+                                if (w && h) resolution = `${w} x ${h}`;
+                                if (r.framesPerSecond != null) frameRate = Math.round(r.framesPerSecond) + ' fps';
+                            }
+                            // 分辨率回退：track
+                            if (resolution === '-- x --' && r.type === 'track' && r.kind === 'video' && r.frameWidth && r.frameHeight) {
+                                resolution = `${r.frameWidth} x ${r.frameHeight}`;
                             }
                         });
-                        const el = document.getElementById('gpConnState'); if (el) el.textContent = gpPeerConn.connectionState || '--';
-                        const elL = document.getElementById('gpLatency'); if (elL) elL.textContent = latency;
-                        const elR = document.getElementById('gpResolution'); if (elR) elR.textContent = resolution;
-                        const elF = document.getElementById('gpFrameRate'); if (elF) elF.textContent = frameRate;
+
+                        const elC = document.getElementById('gpConnState');
+                        if (elC) elC.textContent = gpPeerConn.connectionState || '等待中';
+                        const elL = document.getElementById('gpLatency');
+                        if (elL) elL.textContent = latency;
+                        const elR = document.getElementById('gpResolution');
+                        if (elR) elR.textContent = resolution;
+                        const elF = document.getElementById('gpFrameRate');
+                        if (elF) elF.textContent = frameRate;
                     } catch(e) {}
                 }, 1500);
             };

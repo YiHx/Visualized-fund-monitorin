@@ -531,20 +531,44 @@
                     if (!callPeerConnection) return;
                     try {
                         const stats = await callPeerConnection.getStats();
-                        let latency = '--', resolution = '-- x --', frameRate = '--';
+                        let latency = '-- ms', resolution = '-- x --', frameRate = '-- fps';
+                        const videoTrackIds = new Set();
+
+                        // 第一遍：收集视频 track ID
                         stats.forEach(r => {
+                            if (r.type === 'track' && r.kind === 'video') videoTrackIds.add(r.id);
+                            if (r.type === 'inbound-rtp' && r.mediaType === 'video' && r.trackId) videoTrackIds.add(r.trackId);
+                        });
+
+                        stats.forEach(r => {
+                            // 延迟：优先从 candidate-pair 获取
+                            if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.currentRoundTripTime) {
+                                latency = Math.round(r.currentRoundTripTime * 1000) + ' ms';
+                            }
+                            // 延迟回退：remote-inbound-rtp
+                            if (latency === '-- ms' && r.type === 'remote-inbound-rtp' && r.roundTripTime) {
+                                latency = Math.round(r.roundTripTime * 1000) + ' ms';
+                            }
+                            // 分辨率 + 帧率：从 inbound-rtp
                             if (r.type === 'inbound-rtp' && r.mediaType === 'video') {
-                                latency = r.roundTripTime ? Math.round(r.roundTripTime * 1000) + ' ms' : '-- ms';
-                                resolution = `${r.frameWidth || '--'} x ${r.frameHeight || '--'}`;
-                                frameRate = r.framesPerSecond ? Math.round(r.framesPerSecond) + ' fps' : '-- fps';
+                                const w = r.frameWidth, h = r.frameHeight;
+                                if (w && h) resolution = `${w} x ${h}`;
+                                if (r.framesPerSecond != null) frameRate = Math.round(r.framesPerSecond) + ' fps';
+                            }
+                            // 分辨率回退：track 维度
+                            if (resolution === '-- x --' && r.type === 'track' && r.kind === 'video' && r.frameWidth && r.frameHeight) {
+                                resolution = `${r.frameWidth} x ${r.frameHeight}`;
                             }
                         });
-                        const connState = document.getElementById('lpConnState');
-                        if (connState) connState.textContent = callPeerConnection.connectionState || 'unknown';
-                        const dLat = document.getElementById('lpLatency'), dRes = document.getElementById('lpResolution'), dFps = document.getElementById('lpFrameRate');
-                        if (dLat) dLat.textContent = latency;
-                        if (dRes) dRes.textContent = resolution;
-                        if (dFps) dFps.textContent = frameRate;
+
+                        const elC = document.getElementById('lpConnState');
+                        if (elC) elC.textContent = callPeerConnection.connectionState || '等待中';
+                        const elL = document.getElementById('lpLatency');
+                        if (elL) elL.textContent = latency;
+                        const elR = document.getElementById('lpResolution');
+                        if (elR) elR.textContent = resolution;
+                        const elF = document.getElementById('lpFrameRate');
+                        if (elF) elF.textContent = frameRate;
                     } catch(e) {}
                 }, 1500);
             };

@@ -285,14 +285,29 @@
             if (!peerConnection) return;
             try {
                 const stats = await peerConnection.getStats();
-                let latency = '--', resolution = '-- x --', frameRate = '--';
+                let latency = '-- ms', resolution = '-- x --', frameRate = '-- fps';
+
                 stats.forEach(report => {
-                    if (report.type === 'inbound-rtp' && report.mediaType === 'video') {
+                    // 延迟：优先 candidate-pair（Chrome 中唯一可靠来源）
+                    if (report.type === 'candidate-pair' && report.state === 'succeeded' && report.currentRoundTripTime) {
+                        latency = Math.round(report.currentRoundTripTime * 1000) + ' ms';
+                    }
+                    // 回退：remote-inbound-rtp
+                    if (latency === '-- ms' && report.type === 'remote-inbound-rtp' && report.roundTripTime) {
                         latency = Math.round(report.roundTripTime * 1000) + ' ms';
+                    }
+                    // 分辨率 + 帧率：inbound-rtp video
+                    if (report.type === 'inbound-rtp' && report.mediaType === 'video') {
+                        const w = report.frameWidth, h = report.frameHeight;
+                        if (w && h) resolution = `${w} x ${h}`;
+                        if (report.framesPerSecond != null) frameRate = Math.round(report.framesPerSecond) + ' fps';
+                    }
+                    // 回退：track stats
+                    if (resolution === '-- x --' && report.type === 'track' && report.kind === 'video' && report.frameWidth && report.frameHeight) {
                         resolution = `${report.frameWidth} x ${report.frameHeight}`;
-                        frameRate = Math.round(report.framesPerSecond) + ' fps';
                     }
                 });
+
                 document.getElementById('latency').textContent = latency;
                 document.getElementById('resolution').textContent = resolution;
                 document.getElementById('frameRate').textContent = frameRate;
